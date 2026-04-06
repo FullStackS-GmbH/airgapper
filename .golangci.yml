@@ -1,19 +1,26 @@
+version: "2"
+
 run:
   timeout: 5m
 
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
     - unused
+
+formatters:
+  enable:
     - gofmt
     - goimports
 
 linters-settings:
   lll:
     line-length: 120
+
+formatters-settings:
   goimports:
-    local-prefixes: github.com/fullstacks-gmbh/universal-airgapper
+    local-prefixes:
+      - github.com/fullstacks-gmbh/universal-airgapper

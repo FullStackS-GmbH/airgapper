@@ -74,7 +74,8 @@ docker run --rm \
 
 ## Configuration Reference
 
-Configuration files must be named `*.airgapper.yaml` or `*.airgapper.yml`. For backward compatibility, `*.cnairgapper.yaml` is also accepted. When a folder is provided via `--config`, all matching files are discovered and merged (resource lists are concatenated; scanner definitions are merged by name).
+Configuration files must be named `*.airgapper.yaml` or `*.airgapper.yml`.
+For backward compatibility, `*.cnairgapper.yaml` is also accepted. When a folder is provided via `--config`, all matching files are discovered and merged (resource lists are concatenated; scanner definitions are merged by name).
 
 See [docs/configuration.md](docs/configuration.md) for the full reference.
 
@@ -154,13 +155,13 @@ resources:
 
 **Available placeholders** in the scanner command:
 
-| Placeholder    | Description                                           |
-|----------------|-------------------------------------------------------|
-| `{registry}`   | Registry hostname (e.g., `registry-1.docker.io`)      |
-| `{repository}` | Repository path (e.g., `library/ubuntu`)               |
-| `{tag}`        | Tag / version / ref being synced                       |
+| Placeholder    | Description                                                    |
+|----------------|----------------------------------------------------------------|
+| `{registry}`   | Registry hostname (e.g., `registry-1.docker.io`)               |
+| `{repository}` | Repository path (e.g., `library/ubuntu`)                       |
+| `{tag}`        | Tag / version / ref being synced                               |
 | `{source}`     | Full source reference (e.g., `docker.io/library/ubuntu:22.04`) |
-| `{type}`       | Resource type (`image`, `helm`, `git`)                 |
+| `{type}`       | Resource type (`image`, `helm`, `git`)                         |
 
 ### Full Example
 
@@ -240,6 +241,7 @@ git:
 ```
 
 **Credential resolution order:**
+
 1. By explicit reference (`source_credentials_ref` / `target_credentials_ref` in resource config)
 2. By hostname match (credential `name` matches the registry/host)
 3. Anonymous access (no credentials found)
@@ -255,20 +257,20 @@ airgapper version    Print version, commit, and build date
 
 ### Global Flags
 
-| Flag              | Short | Env Var                | Default | Description                         |
-|-------------------|-------|------------------------|---------|-------------------------------------|
-| `--config`        | `-c`  | `AIRGAPPER_CONFIG`     | (none)  | Path to config file or folder       |
-| `--credentials`   |       | `AIRGAPPER_CREDENTIALS`| (none)  | Path to credentials file or folder  |
-| `--debug`         | `-d`  | `AIRGAPPER_DEBUG`      | `false` | Enable debug logging (JSON, DEBUG level) |
-| `--dry-run`       |       | `AIRGAPPER_DRY_RUN`    | `false` | Disable all write/push operations   |
+| Flag            | Short | Env Var                 | Default | Description                              |
+|-----------------|-------|-------------------------|---------|------------------------------------------|
+| `--config`      | `-c`  | `AIRGAPPER_CONFIG`      | (none)  | Path to config file or folder            |
+| `--credentials` |       | `AIRGAPPER_CREDENTIALS` | (none)  | Path to credentials file or folder       |
+| `--debug`       | `-d`  | `AIRGAPPER_DEBUG`       | `false` | Enable debug logging (JSON, DEBUG level) |
+| `--dry-run`     |       | `AIRGAPPER_DRY_RUN`     | `false` | Disable all write/push operations        |
 
 ### Exit Codes
 
-| Code | Meaning                                    |
-|------|--------------------------------------------|
-| `0`  | All resources synced successfully           |
-| `1`  | Sync completed with one or more failures   |
-| `2`  | Usage or configuration error               |
+| Code | Meaning                                  |
+|------|------------------------------------------|
+| `0`  | All resources synced successfully        |
+| `1`  | Sync completed with one or more failures |
+| `2`  | Usage or configuration error             |
 
 ### Examples
 
@@ -336,8 +338,8 @@ spec:
       containers:
         - name: airgapper
           image: ghcr.io/fullstacks-gmbh/universal-airgapper:latest
-          command: ["/airgapper"]
-          args: ["sync", "--config", "/mnt/config/", "--credentials", "/mnt/creds/"]
+          command: [ "/airgapper" ]
+          args: [ "sync", "--config", "/mnt/config/", "--credentials", "/mnt/creds/" ]
           volumeMounts:
             - name: config-volume
               mountPath: /mnt/config/config.yaml
@@ -373,8 +375,8 @@ spec:
           containers:
             - name: airgapper
               image: ghcr.io/fullstacks-gmbh/universal-airgapper:latest
-              command: ["/airgapper"]
-              args: ["sync", "--config", "/mnt/config/", "--credentials", "/mnt/creds/"]
+              command: [ "/airgapper" ]
+              args: [ "sync", "--config", "/mnt/config/", "--credentials", "/mnt/creds/" ]
               # ... volume mounts as above
 ```
 
