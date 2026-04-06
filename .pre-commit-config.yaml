@@ -43,18 +43,33 @@ repos:
           - '-ctitle-match-regex.regex=^(feat|fix|try|maintain)!?(\(.*\))?:.+|^Merge branch.*'
           - --msg-filename
 
-  # Go formatting and linting
-  - repo: https://github.com/dnephin/pre-commit-golang
-    rev: v0.5.1
-    hooks:
-      - id: go-fmt
-      - id: go-vet
-      - id: golangci-lint
-
+  # Go formatting, vetting, linting, testing (uses binaries from nix flake)
   - repo: local
     hooks:
+      - id: go-fmt
+        name: gofmt
+        entry: gofmt -l -w
+        language: system
+        types: [go]
+
+      - id: go-vet
+        name: go vet
+        entry: go vet ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+        always_run: true
+
+      - id: golangci-lint
+        name: golangci-lint
+        entry: golangci-lint run ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+        always_run: true
+
       - id: go-test
-        name: Run Go tests
+        name: go test
         entry: go test ./...
         language: system
         types: [go]

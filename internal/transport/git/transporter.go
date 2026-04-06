@@ -95,7 +95,7 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 	if err != nil {
 		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create temp dir: %w", err)}
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	srcAuth, err := credToTransportAuth(srcCred)
 	if err != nil {

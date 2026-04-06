@@ -13,9 +13,9 @@ func newVersionCmd(version, commit, date string) *cobra.Command {
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(cmd *cobra.Command, _ []string) {
-			fmt.Fprintf(cmd.OutOrStdout(), "airgapper version %s\n", version)
-			fmt.Fprintf(cmd.OutOrStdout(), "  commit: %s\n", commit)
-			fmt.Fprintf(cmd.OutOrStdout(), "  built:  %s\n", date)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "airgapper version %s\n", version)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  commit: %s\n", commit)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  built:  %s\n", date)
 		},
 	}
 	return cmd

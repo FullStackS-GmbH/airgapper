@@ -109,13 +109,13 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		dest := result.Resource.Destination.String()
 
 		for _, vr := range result.Synced {
-			fmt.Fprintln(cmd.OutOrStdout(), sync.FormatResult(result.Resource.Type, source, dest, vr))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), sync.FormatResult(result.Resource.Type, source, dest, vr))
 		}
 		for _, vr := range result.Skipped {
-			fmt.Fprintln(cmd.OutOrStdout(), sync.FormatResult(result.Resource.Type, source, dest, vr))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), sync.FormatResult(result.Resource.Type, source, dest, vr))
 		}
 		for _, vr := range result.Failed {
-			fmt.Fprintln(cmd.OutOrStdout(), sync.FormatResult(result.Resource.Type, source, dest, vr))
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), sync.FormatResult(result.Resource.Type, source, dest, vr))
 		}
 
 		if result.HasFailures() {
@@ -125,7 +125,7 @@ func runSync(cmd *cobra.Command, _ []string) error {
 
 	// Print summary.
 	summary := sync.Summarize(results)
-	fmt.Fprintf(cmd.OutOrStdout(), "\nSummary: %d resources, %d versions (%d synced, %d skipped, %d failed)\n",
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSummary: %d resources, %d versions (%d synced, %d skipped, %d failed)\n",
 		summary.TotalResources,
 		summary.TotalVersions,
 		summary.Synced,
