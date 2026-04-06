@@ -1,0 +1,8 @@
+resources:
+  - type: helm
+    source_registry: "charts.example.com"
+    source_chart: "mychart"
+    destination_registry: "internal.charts.io"
+    destination_repo: "mychart"
+    versions:
+      - "1.0.0"

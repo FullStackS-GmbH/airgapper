@@ -1,0 +1,9 @@
+.git
+.github
+.devcontainer
+docs
+tests
+*.md
+creds/
+.envrc
+flake.*

@@ -1,0 +1,50 @@
+# Go binary
+/airgapper
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build output
+/dist/
+/build/
+
+# Vendor directory (if not vendoring)
+vendor/
+
+# Test binary
+*.test
+
+# Coverage
+*.out
+coverage.html
+
+# Environment and credentials
+.env
+.env.*
+creds/
+credentials.yaml
+
+# Debug
+local/
+tmp/
+sync_tmp/
+
+# IDE & AI
+.idea/
+.vscode/
+*.iws
+*.iml
+*.ipr
+.claude/
+.ai/
+.coverage
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Nix / direnv
+.direnv/
+result

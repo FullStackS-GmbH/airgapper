@@ -1,0 +1,14 @@
+scanners:
+  - name: trivy
+    command: "trivy image {source}"
+    success_code: 0
+    timeout: 120
+
+resources:
+  - type: image
+    source: "registry.example.com/repo/image"
+    destination: "internal.registry.io/repo/image"
+    tags:
+      - "v1.0.0"
+      - "v2.0.0"
+    push_mode: skip

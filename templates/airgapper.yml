@@ -1,0 +1,53 @@
+spec:
+  inputs:
+    stage:
+      default: run
+    job-name:
+      default: "airgapper"
+    image_registry:
+      type: string
+      default: "ghcr.io"
+      description: "registry of the image to use"
+    image_name:
+      type: string
+      default: "fullstacks-gmbh/universal-airgapper"
+      description: "name of the image"
+    image_tag:
+      type: string
+      default: "latest"
+      description: "tag of the image"
+    image_pull_policy:
+      type: string
+      default: "always"
+      description: "image pull policy"
+    config-folder:
+      description: "path to folder containing config files"
+      default: ${CI_PROJECT_DIR}
+    credentials-file:
+      description: "path to credentials file"
+      default: ${UNIVERSAL_AIRGAPPER_CREDS}
+    debug:
+      description: "enable debug mode"
+      default: ""
+      options: ['', '--debug']
+
+---
+
+$[[ inputs.job-name ]]:
+  stage: $[[ inputs.stage ]]
+  image:
+    name: "$[[ inputs.image_registry ]]/$[[ inputs.image_name ]]:$[[ inputs.image_tag ]]"
+    entrypoint: [""]
+    pull_policy: $[[ inputs.image_pull_policy ]]
+  script:
+    - echo "========================================================"
+    - echo "================ Universal Airgapper ==================="
+    - echo "====================== CONFIG =========================="
+    - cat $[[ inputs.config-folder ]]/*.yaml
+    - echo "========================================================"
+    - |
+      /airgapper sync \
+        --config $[[ inputs.config-folder ]] \
+        --credentials $[[ inputs.credentials-file ]] $[[ inputs.debug ]]
+  rules:
+    - when: always

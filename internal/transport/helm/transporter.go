@@ -1,0 +1,232 @@
+package helm
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
+
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/crane"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"helm.sh/helm/v4/pkg/registry"
+
+	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
+)
+
+// Transporter handles synchronization of Helm charts between registries. It
+// supports both OCI-compliant registries (using the Helm registry client) and
+// legacy HTTP chart repositories.
+type Transporter struct {
+	logger *slog.Logger
+}
+
+// New creates a new Helm chart Transporter with the given logger.
+func New(logger *slog.Logger) *Transporter {
+	return &Transporter{logger: logger}
+}
+
+// Type returns domain.ResourceTypeHelm.
+func (t *Transporter) Type() domain.ResourceType {
+	return domain.ResourceTypeHelm
+}
+
+// Sync copies Helm charts from source to destination for each version listed
+// in the resource. It respects the PushMode and DryRun settings.
+func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts domain.SyncOptions) (*domain.SyncResult, error) {
+	result := &domain.SyncResult{Resource: resource}
+	logger := opts.Logger
+	if logger == nil {
+		logger = t.logger
+	}
+
+	for _, version := range resource.Versions {
+		vr := t.syncVersion(ctx, resource, version, opts, logger)
+		switch vr.Status {
+		case domain.SyncStatusSynced:
+			result.Synced = append(result.Synced, vr)
+		case domain.SyncStatusSkipped:
+			result.Skipped = append(result.Skipped, vr)
+		case domain.SyncStatusFailed:
+			result.Failed = append(result.Failed, vr)
+		}
+	}
+
+	return result, nil
+}
+
+// syncVersion handles the sync logic for a single chart version.
+func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource, version string, opts domain.SyncOptions, logger *slog.Logger) domain.VersionResult {
+	_ = ctx // reserved for future cancellation support
+
+	srcRef := NormalizeOCIRef(resource.Source.Registry, resource.Source.Repository, version)
+	dstRef := NormalizeOCIRef(resource.Destination.Registry, resource.Destination.Repository, version)
+
+	logger = logger.With("version", version, "src", srcRef, "dst", dstRef)
+
+	// Resolve credentials.
+	srcCred, err := resolveCredentials(resource.SourceCredentialsRef, resource.Source, domain.CredentialTypeHelm, opts.Credentials)
+	if err != nil {
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve source credentials: %w", err)}
+	}
+
+	dstCred, err := resolveCredentials(resource.TargetCredentialsRef, resource.Destination, domain.CredentialTypeHelm, opts.Credentials)
+	if err != nil {
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve target credentials: %w", err)}
+	}
+
+	// Check if the chart already exists at the destination.
+	exists, err := t.Exists(ctx, resource.Destination, version, dstCred)
+	if err != nil {
+		logger.Warn("failed to check existence at destination", "error", err)
+	}
+
+	if exists && resource.PushMode == domain.PushModeSkip {
+		logger.Info("chart already exists at destination, skipping")
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "already exists"}
+	}
+
+	// Dry-run mode.
+	if opts.DryRun {
+		logger.Info("dry-run: would copy chart")
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "dry-run"}
+	}
+
+	// Create a Helm registry client for pull/push operations.
+	client, err := registry.NewClient(registry.ClientOptWriter(io.Discard))
+	if err != nil {
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create registry client: %w", err)}
+	}
+
+	// Login to source registry.
+	if srcCred != nil {
+		srcHost := extractHost(resource.Source.Registry)
+		if loginErr := client.Login(srcHost, registry.LoginOptBasicAuth(srcCred.Username, srcCred.Password)); loginErr != nil {
+			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to source %q: %w", srcHost, loginErr)}
+		}
+	}
+
+	// Login to destination registry.
+	if dstCred != nil {
+		dstHost := extractHost(resource.Destination.Registry)
+		if loginErr := client.Login(dstHost, registry.LoginOptBasicAuth(dstCred.Username, dstCred.Password)); loginErr != nil {
+			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to destination %q: %w", dstHost, loginErr)}
+		}
+	}
+
+	// Pull chart from source.
+	logger.Info("pulling chart from source")
+	pullResult, err := client.Pull(srcRef)
+	if err != nil {
+		logger.Error("failed to pull chart", "error", err)
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("pull chart: %w", err)}
+	}
+
+	// Build the destination reference without the version tag for push.
+	// The push target is "oci://registry/chart" and the version comes from
+	// the chart metadata.
+	dstPushRef := NormalizeOCIRef(resource.Destination.Registry, resource.Destination.Repository, "")
+
+	// Push chart to destination.
+	logger.Info("pushing chart to destination")
+	_, err = client.Push(pullResult.Chart.Data, dstPushRef)
+	if err != nil {
+		logger.Error("failed to push chart", "error", err)
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push chart: %w", err)}
+	}
+
+	logger.Info("chart synced successfully")
+	return domain.VersionResult{Version: version, Status: domain.SyncStatusSynced, Message: "copied"}
+}
+
+// Exists checks whether a specific chart version exists at the given endpoint.
+// For OCI registries, it checks for the OCI manifest using remote.Head. For
+// legacy registries, it attempts to fetch index.yaml and search for the chart
+// version (not yet implemented — returns false).
+func (t *Transporter) Exists(_ context.Context, endpoint domain.Endpoint, version string, creds *domain.Credential) (bool, error) {
+	if !IsOCIRegistry(endpoint.Registry) {
+		// Legacy HTTP repos are not yet supported for existence checks.
+		return false, nil
+	}
+
+	// Build an OCI reference for the manifest check.
+	ref := fmt.Sprintf("%s/%s:%s", extractHost(endpoint.Registry), endpoint.Repository, version)
+
+	parsed, err := name.ParseReference(ref)
+	if err != nil {
+		return false, fmt.Errorf("parse reference %q: %w", ref, err)
+	}
+
+	auth := helmCredToAuth(creds)
+	_, err = remote.Head(parsed, remote.WithAuth(auth))
+	if err != nil {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// ListVersions returns all available versions for a chart at the given
+// endpoint. For OCI registries, it lists tags using crane. For legacy
+// registries, it would parse index.yaml (not yet implemented).
+func (t *Transporter) ListVersions(_ context.Context, endpoint domain.Endpoint, creds *domain.Credential) ([]string, error) {
+	if !IsOCIRegistry(endpoint.Registry) {
+		return nil, fmt.Errorf("legacy chart repository listing not yet supported: %w", domain.ErrUnsupportedTransport)
+	}
+
+	repo := fmt.Sprintf("%s/%s", extractHost(endpoint.Registry), endpoint.Repository)
+	auth := helmCredToAuth(creds)
+
+	tags, err := crane.ListTags(repo, crane.WithAuth(auth))
+	if err != nil {
+		return nil, fmt.Errorf("list tags for %q: %w", repo, err)
+	}
+
+	return tags, nil
+}
+
+// helmCredToAuth converts a domain Credential to an authn.Authenticator.
+func helmCredToAuth(cred *domain.Credential) authn.Authenticator {
+	if cred == nil {
+		return authn.Anonymous
+	}
+	return &authn.Basic{Username: cred.Username, Password: cred.Password}
+}
+
+// resolveCredentials resolves credentials for an endpoint. If credRef is
+// non-empty, it uses ResolveByRef. Otherwise, it falls back to Resolve using
+// the endpoint registry as the host.
+func resolveCredentials(credRef string, endpoint domain.Endpoint, credType domain.CredentialType, store domain.CredentialStore) (*domain.Credential, error) {
+	if store == nil {
+		return nil, nil
+	}
+
+	if credRef != "" {
+		cred, err := store.ResolveByRef(credRef)
+		if err != nil {
+			return nil, fmt.Errorf("resolve credential ref %q: %w", credRef, err)
+		}
+		return cred, nil
+	}
+
+	cred, err := store.Resolve(endpoint.Registry, credType)
+	if err != nil {
+		return nil, fmt.Errorf("resolve credential for host %q: %w", endpoint.Registry, err)
+	}
+	return cred, nil
+}
+
+// extractHost removes the "oci://" prefix and any trailing path from a
+// registry string, returning just the hostname (and optional port).
+func extractHost(registry string) string {
+	host := registry
+	if len(host) > 6 && host[:6] == "oci://" {
+		host = host[6:]
+	}
+	// Remove trailing slashes.
+	for len(host) > 0 && host[len(host)-1] == '/' {
+		host = host[:len(host)-1]
+	}
+	return host
+}
