@@ -80,6 +80,9 @@ type SyncResult struct {
 
 	// Failed contains versions that failed to sync.
 	Failed []VersionResult
+
+	// Operations records every discrete operation performed for this resource.
+	Operations []OperationRecord
 }
 
 // TotalCount returns the total number of versions processed.
@@ -146,6 +149,42 @@ type ScanResult struct {
 
 	// ExitCode is the actual exit code returned by the scanner process.
 	ExitCode int
+}
+
+// OperationType categorizes individual operations performed during a sync run.
+type OperationType string
+
+const (
+	// OpRead indicates a list-versions call against the source.
+	OpRead OperationType = "read"
+	// OpPull indicates an artifact was pulled from the source.
+	OpPull OperationType = "pull"
+	// OpPush indicates an artifact was pushed to the destination.
+	OpPush OperationType = "push"
+	// OpSkip indicates a version was skipped (already exists at destination).
+	OpSkip OperationType = "skip"
+	// OpOverwrite indicates an existing artifact was overwritten.
+	OpOverwrite OperationType = "overwrite"
+	// OpForce indicates a force push was performed.
+	OpForce OperationType = "force"
+	// OpFail indicates an operation failed.
+	OpFail OperationType = "fail"
+)
+
+// OperationRecord captures a single discrete operation performed during sync.
+type OperationRecord struct {
+	// ResourceType is the type of artifact involved.
+	ResourceType ResourceType
+	// Operation is the kind of operation performed.
+	Operation OperationType
+	// Source is the source reference string.
+	Source string
+	// Destination is the destination reference string.
+	Destination string
+	// Version is the tag, chart version, or git ref.
+	Version string
+	// Message is a human-readable description of what happened.
+	Message string
 }
 
 // Credential holds authentication data for a registry, repository, or service.

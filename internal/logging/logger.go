@@ -8,17 +8,24 @@ import (
 	"os"
 )
 
-// NewLogger creates a new structured JSON logger that writes to stderr. When
-// debug is true the log level is set to DEBUG; otherwise it defaults to INFO.
-func NewLogger(debug bool) *slog.Logger {
+// NewLogger creates a structured logger that writes to stderr. The format
+// parameter selects between "json" (default) and "text" output. When debug
+// is true the log level is set to DEBUG; otherwise it defaults to INFO.
+func NewLogger(debug bool, format string) *slog.Logger {
 	level := slog.LevelInfo
 	if debug {
 		level = slog.LevelDebug
 	}
 
-	handler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: level,
-	})
+	opts := &slog.HandlerOptions{Level: level}
+
+	var handler slog.Handler
+	switch format {
+	case "text":
+		handler = slog.NewTextHandler(os.Stderr, opts)
+	default:
+		handler = slog.NewJSONHandler(os.Stderr, opts)
+	}
 
 	return slog.New(handler)
 }

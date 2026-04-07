@@ -37,9 +37,11 @@ func runSync(cmd *cobra.Command, _ []string) error {
 	credsPath := viper.GetString("credentials")
 	debug := viper.GetBool("debug")
 	dryRun := viper.GetBool("dry_run")
+	logFormat := viper.GetString("log_format")
+	dryRunLogPath := viper.GetString("dry_run_log")
 
 	// Initialize structured logger.
-	logger := logging.NewLogger(debug)
+	logger := logging.NewLogger(debug, logFormat)
 
 	// Validate required flags.
 	if configPath == "" {
@@ -125,13 +127,17 @@ func runSync(cmd *cobra.Command, _ []string) error {
 
 	// Print summary.
 	summary := sync.Summarize(results)
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nSummary: %d resources, %d versions (%d synced, %d skipped, %d failed)\n",
-		summary.TotalResources,
-		summary.TotalVersions,
-		summary.Synced,
-		summary.Skipped,
-		summary.Failed,
-	)
+	_, _ = fmt.Fprint(cmd.OutOrStdout(), sync.FormatSummary(summary))
+
+	// Write dry-run log file.
+	if dryRun {
+		logPath, logErr := sync.WriteDryRunLog(dryRunLogPath, results, summary)
+		if logErr != nil {
+			logger.Error("failed to write dry-run log", "error", logErr)
+		} else {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Dry-run log written to: %s\n", logPath)
+		}
+	}
 
 	if hasFailures {
 		return fmt.Errorf("sync completed with %d failures", summary.Failed)

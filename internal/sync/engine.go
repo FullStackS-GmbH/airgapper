@@ -93,12 +93,15 @@ func (e *Engine) processResource(ctx context.Context, res domain.Resource, opts 
 	}
 
 	// Expand version patterns into concrete version lists.
-	expandedVersions, err := e.expandVersions(ctx, t, res, opts)
+	expandedVersions, readOps, err := e.expandVersions(ctx, t, res, opts, rLogger)
 	if err != nil {
 		return nil, fmt.Errorf("resource %s %s: expand versions: %w", res.Type, res.Source, err)
 	}
 
-	rLogger.Debug("expanded versions", slog.Int("count", len(expandedVersions)))
+	rLogger.Debug("expanded versions",
+		slog.Int("count", len(expandedVersions)),
+		slog.Any("versions", expandedVersions),
+	)
 
 	// Build a modified resource with the expanded version list.
 	expandedRes := res
@@ -118,14 +121,18 @@ func (e *Engine) processResource(ctx context.Context, res domain.Resource, opts 
 		return nil, fmt.Errorf("resource %s %s: sync: %w", res.Type, res.Source, err)
 	}
 
+	// Prepend read operations from version expansion.
+	result.Operations = append(readOps, result.Operations...)
+
 	return result, nil
 }
 
 // expandVersions resolves version patterns (regex patterns) into concrete
 // version strings by listing available versions and filtering with pattern
-// matching.
-func (e *Engine) expandVersions(ctx context.Context, t domain.Transporter, res domain.Resource, opts domain.SyncOptions) ([]string, error) {
+// matching. It also returns operation records for each ListVersions call.
+func (e *Engine) expandVersions(ctx context.Context, t domain.Transporter, res domain.Resource, opts domain.SyncOptions, logger *slog.Logger) ([]string, []domain.OperationRecord, error) {
 	var expanded []string
+	var ops []domain.OperationRecord
 
 	for _, version := range res.Versions {
 		if !pattern.IsPattern(version) {
@@ -139,25 +146,40 @@ func (e *Engine) expandVersions(ctx context.Context, t domain.Transporter, res d
 		if res.SourceCredentialsRef != "" && opts.Credentials != nil {
 			c, err := opts.Credentials.ResolveByRef(res.SourceCredentialsRef)
 			if err != nil {
-				return nil, fmt.Errorf("resolve source credentials for pattern expansion: %w", err)
+				return nil, nil, fmt.Errorf("resolve source credentials for pattern expansion: %w", err)
 			}
 			creds = c
 		}
 
 		available, err := t.ListVersions(ctx, res.Source, creds)
 		if err != nil {
-			return nil, fmt.Errorf("list versions for pattern %q: %w", version, err)
+			return nil, nil, fmt.Errorf("list versions for pattern %q: %w", version, err)
 		}
+
+		// Record the read operation.
+		ops = append(ops, domain.OperationRecord{
+			ResourceType: res.Type,
+			Operation:    domain.OpRead,
+			Source:       res.Source.String(),
+			Destination:  res.Destination.String(),
+			Message:      fmt.Sprintf("listed %d versions from source for pattern %q", len(available), version),
+		})
 
 		matched, err := pattern.Match(version, available)
 		if err != nil {
-			return nil, fmt.Errorf("match pattern %q: %w", version, err)
+			return nil, nil, fmt.Errorf("match pattern %q: %w", version, err)
 		}
+
+		logger.Debug("pattern matched",
+			slog.String("pattern", version),
+			slog.Int("count", len(matched)),
+			slog.Any("matched", matched),
+		)
 
 		expanded = append(expanded, matched...)
 	}
 
-	return expanded, nil
+	return expanded, ops, nil
 }
 
 // scanVersions runs the configured scanner against each version of the

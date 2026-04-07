@@ -44,7 +44,8 @@ func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts d
 	}
 
 	for _, ref := range resource.Versions {
-		vr := t.syncRef(ctx, resource, ref, opts, logger)
+		vr, ops := t.syncRef(ctx, resource, ref, opts, logger)
+		result.Operations = append(result.Operations, ops...)
 		switch vr.Status {
 		case domain.SyncStatusSynced:
 			result.Synced = append(result.Synced, vr)
@@ -59,18 +60,31 @@ func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts d
 }
 
 // syncRef handles the sync logic for a single git ref.
-func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref string, opts domain.SyncOptions, logger *slog.Logger) domain.VersionResult {
+func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref string, opts domain.SyncOptions, logger *slog.Logger) (domain.VersionResult, []domain.OperationRecord) {
 	logger = logger.With("ref", ref, "src", resource.Source.Repository, "dst", resource.Destination.Repository)
+
+	op := func(operation domain.OperationType, msg string) domain.OperationRecord {
+		return domain.OperationRecord{
+			ResourceType: domain.ResourceTypeGit,
+			Operation:    operation,
+			Source:       resource.Source.Repository,
+			Destination:  resource.Destination.Repository,
+			Version:      ref,
+			Message:      msg,
+		}
+	}
 
 	// Resolve credentials.
 	srcCred, err := resolveCredentials(resource.SourceCredentialsRef, resource.Source, domain.CredentialTypeGit, opts.Credentials)
 	if err != nil {
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve source credentials: %w", err)}
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve source credentials: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "resolve source credentials: "+err.Error())}
 	}
 
 	dstCred, err := resolveCredentials(resource.TargetCredentialsRef, resource.Destination, domain.CredentialTypeGit, opts.Credentials)
 	if err != nil {
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve target credentials: %w", err)}
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve target credentials: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "resolve target credentials: "+err.Error())}
 	}
 
 	// Check if the ref exists at the destination (for skip mode).
@@ -79,27 +93,29 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 		logger.Warn("failed to check existence at destination", "error", err)
 	}
 
-	if exists && resource.PushMode == domain.PushModeSkip {
-		logger.Info("ref already exists at destination, skipping")
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusSkipped, Message: "already exists"}
+	// Dry-run mode: report what would happen without mutating.
+	if opts.DryRun {
+		return t.dryRunResult(resource, ref, exists, logger, op)
 	}
 
-	// Dry-run mode.
-	if opts.DryRun {
-		logger.Info("dry-run: would sync ref")
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusSkipped, Message: "dry-run"}
+	if exists && resource.PushMode == domain.PushModeSkip {
+		logger.Info("ref already exists at destination, skipping")
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusSkipped, Message: "already exists"},
+			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
 	}
 
 	// Clone source repo to a temporary directory, fetching only the target ref.
 	tmpDir, err := os.MkdirTemp("", "airgapper-git-*")
 	if err != nil {
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create temp dir: %w", err)}
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create temp dir: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "create temp dir: "+err.Error())}
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	srcAuth, err := credToTransportAuth(srcCred)
 	if err != nil {
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("build source auth: %w", err)}
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("build source auth: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "build source auth: "+err.Error())}
 	}
 
 	logger.Info("cloning source repository")
@@ -115,13 +131,15 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 	repo, err := gogit.PlainCloneContext(ctx, tmpDir, false, cloneOpts)
 	if err != nil {
 		logger.Error("failed to clone source", "error", err)
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("clone source: %w", err)}
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("clone source: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "clone source: "+err.Error())}
 	}
 
 	// Add destination as remote "target".
 	dstAuth, err := credToTransportAuth(dstCred)
 	if err != nil {
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("build destination auth: %w", err)}
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("build destination auth: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "build destination auth: "+err.Error())}
 	}
 
 	_, err = repo.CreateRemote(&config.RemoteConfig{
@@ -129,7 +147,8 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 		URLs: []string{resource.Destination.Repository},
 	})
 	if err != nil {
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("add target remote: %w", err)}
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("add target remote: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "add target remote: "+err.Error())}
 	}
 
 	// Push the ref to the target remote.
@@ -144,11 +163,42 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 
 	if err := repo.PushContext(ctx, pushOpts); err != nil {
 		logger.Error("failed to push to destination", "error", err)
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push to destination: %w", err)}
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push to destination: %w", err)},
+			[]domain.OperationRecord{op(domain.OpPull, "cloned from source"), op(domain.OpFail, "push to destination: "+err.Error())}
 	}
 
 	logger.Info("ref synced successfully")
-	return domain.VersionResult{Version: ref, Status: domain.SyncStatusSynced, Message: "pushed"}
+
+	var ops []domain.OperationRecord
+	ops = append(ops, op(domain.OpPull, "cloned from source"))
+	if exists && (resource.PushMode == domain.PushModeForce || resource.PushMode == domain.PushModeOverwrite) {
+		ops = append(ops, op(domain.OpForce, "force pushed (overwritten)"))
+	} else {
+		ops = append(ops, op(domain.OpPush, "pushed to destination"))
+	}
+	return domain.VersionResult{Version: ref, Status: domain.SyncStatusSynced, Message: "pushed"}, ops
+}
+
+// dryRunResult returns the appropriate dry-run result based on existence and push mode.
+func (t *Transporter) dryRunResult(resource domain.Resource, ref string, exists bool, logger *slog.Logger, op func(domain.OperationType, string) domain.OperationRecord) (domain.VersionResult, []domain.OperationRecord) {
+	var msg string
+	var opRec domain.OperationRecord
+
+	switch {
+	case exists && resource.PushMode == domain.PushModeSkip:
+		msg = "dry-run: would skip (already exists)"
+		opRec = op(domain.OpSkip, msg)
+	case exists:
+		msg = "dry-run: would overwrite (already exists)"
+		opRec = op(domain.OpForce, msg)
+	default:
+		msg = "dry-run: would sync"
+		opRec = op(domain.OpPush, msg)
+	}
+
+	logger.Info(msg)
+	return domain.VersionResult{Version: ref, Status: domain.SyncStatusSkipped, Message: msg},
+		[]domain.OperationRecord{opRec}
 }
 
 // Exists checks whether a specific ref exists at the given endpoint by listing

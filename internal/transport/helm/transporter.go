@@ -42,7 +42,8 @@ func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts d
 	}
 
 	for _, version := range resource.Versions {
-		vr := t.syncVersion(ctx, resource, version, opts, logger)
+		vr, ops := t.syncVersion(ctx, resource, version, opts, logger)
+		result.Operations = append(result.Operations, ops...)
 		switch vr.Status {
 		case domain.SyncStatusSynced:
 			result.Synced = append(result.Synced, vr)
@@ -57,7 +58,7 @@ func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts d
 }
 
 // syncVersion handles the sync logic for a single chart version.
-func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource, version string, opts domain.SyncOptions, logger *slog.Logger) domain.VersionResult {
+func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource, version string, opts domain.SyncOptions, logger *slog.Logger) (domain.VersionResult, []domain.OperationRecord) {
 	_ = ctx // reserved for future cancellation support
 
 	srcRef := NormalizeOCIRef(resource.Source.Registry, resource.Source.Repository, version)
@@ -65,15 +66,28 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 
 	logger = logger.With("version", version, "src", srcRef, "dst", dstRef)
 
+	op := func(operation domain.OperationType, msg string) domain.OperationRecord {
+		return domain.OperationRecord{
+			ResourceType: domain.ResourceTypeHelm,
+			Operation:    operation,
+			Source:       srcRef,
+			Destination:  dstRef,
+			Version:      version,
+			Message:      msg,
+		}
+	}
+
 	// Resolve credentials.
 	srcCred, err := resolveCredentials(resource.SourceCredentialsRef, resource.Source, domain.CredentialTypeHelm, opts.Credentials)
 	if err != nil {
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve source credentials: %w", err)}
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve source credentials: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "resolve source credentials: "+err.Error())}
 	}
 
 	dstCred, err := resolveCredentials(resource.TargetCredentialsRef, resource.Destination, domain.CredentialTypeHelm, opts.Credentials)
 	if err != nil {
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve target credentials: %w", err)}
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve target credentials: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "resolve target credentials: "+err.Error())}
 	}
 
 	// Check if the chart already exists at the destination.
@@ -82,28 +96,30 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 		logger.Warn("failed to check existence at destination", "error", err)
 	}
 
-	if exists && resource.PushMode == domain.PushModeSkip {
-		logger.Info("chart already exists at destination, skipping")
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "already exists"}
+	// Dry-run mode: report what would happen without mutating.
+	if opts.DryRun {
+		return t.dryRunResult(resource, version, exists, logger, op)
 	}
 
-	// Dry-run mode.
-	if opts.DryRun {
-		logger.Info("dry-run: would copy chart")
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "dry-run"}
+	if exists && resource.PushMode == domain.PushModeSkip {
+		logger.Info("chart already exists at destination, skipping")
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "already exists"},
+			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
 	}
 
 	// Create a Helm registry client for pull/push operations.
 	client, err := registry.NewClient(registry.ClientOptWriter(io.Discard))
 	if err != nil {
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create registry client: %w", err)}
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create registry client: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "create registry client: "+err.Error())}
 	}
 
 	// Login to source registry.
 	if srcCred != nil {
 		srcHost := extractHost(resource.Source.Registry)
 		if loginErr := client.Login(srcHost, registry.LoginOptBasicAuth(srcCred.Username, srcCred.Password)); loginErr != nil {
-			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to source %q: %w", srcHost, loginErr)}
+			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to source %q: %w", srcHost, loginErr)},
+				[]domain.OperationRecord{op(domain.OpFail, "login to source: "+loginErr.Error())}
 		}
 	}
 
@@ -111,7 +127,8 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 	if dstCred != nil {
 		dstHost := extractHost(resource.Destination.Registry)
 		if loginErr := client.Login(dstHost, registry.LoginOptBasicAuth(dstCred.Username, dstCred.Password)); loginErr != nil {
-			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to destination %q: %w", dstHost, loginErr)}
+			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to destination %q: %w", dstHost, loginErr)},
+				[]domain.OperationRecord{op(domain.OpFail, "login to destination: "+loginErr.Error())}
 		}
 	}
 
@@ -120,7 +137,8 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 	pullResult, err := client.Pull(srcRef)
 	if err != nil {
 		logger.Error("failed to pull chart", "error", err)
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("pull chart: %w", err)}
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("pull chart: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "pull chart: "+err.Error())}
 	}
 
 	// Build the destination reference without the version tag for push.
@@ -133,11 +151,42 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 	_, err = client.Push(pullResult.Chart.Data, dstPushRef)
 	if err != nil {
 		logger.Error("failed to push chart", "error", err)
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push chart: %w", err)}
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push chart: %w", err)},
+			[]domain.OperationRecord{op(domain.OpPull, "pulled from source"), op(domain.OpFail, "push chart: "+err.Error())}
 	}
 
 	logger.Info("chart synced successfully")
-	return domain.VersionResult{Version: version, Status: domain.SyncStatusSynced, Message: "copied"}
+
+	var ops []domain.OperationRecord
+	ops = append(ops, op(domain.OpPull, "pulled from source"))
+	if exists && (resource.PushMode == domain.PushModeForce || resource.PushMode == domain.PushModeOverwrite) {
+		ops = append(ops, op(domain.OpOverwrite, "overwritten at destination"))
+	} else {
+		ops = append(ops, op(domain.OpPush, "pushed to destination"))
+	}
+	return domain.VersionResult{Version: version, Status: domain.SyncStatusSynced, Message: "copied"}, ops
+}
+
+// dryRunResult returns the appropriate dry-run result based on existence and push mode.
+func (t *Transporter) dryRunResult(resource domain.Resource, version string, exists bool, logger *slog.Logger, op func(domain.OperationType, string) domain.OperationRecord) (domain.VersionResult, []domain.OperationRecord) {
+	var msg string
+	var opRec domain.OperationRecord
+
+	switch {
+	case exists && resource.PushMode == domain.PushModeSkip:
+		msg = "dry-run: would skip (already exists)"
+		opRec = op(domain.OpSkip, msg)
+	case exists:
+		msg = "dry-run: would overwrite (already exists)"
+		opRec = op(domain.OpOverwrite, msg)
+	default:
+		msg = "dry-run: would sync"
+		opRec = op(domain.OpPush, msg)
+	}
+
+	logger.Info(msg)
+	return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: msg},
+		[]domain.OperationRecord{opRec}
 }
 
 // Exists checks whether a specific chart version exists at the given endpoint.

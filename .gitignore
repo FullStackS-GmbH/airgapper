@@ -25,6 +25,7 @@ coverage.html
 .env.*
 creds/
 credentials.yaml
+tests/integration/.state.env
 
 # Debug
 local/

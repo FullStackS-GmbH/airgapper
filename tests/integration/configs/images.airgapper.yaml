@@ -1,0 +1,48 @@
+resources:
+  # ---------------------------------------------------------------------------
+  # Docker Hub — official library images (short names resolve to docker.io)
+  # ---------------------------------------------------------------------------
+  - type: image
+    source: alpine
+    destination: "registry.lab.cloudstacks.eu/ddrack/alpine"
+    push_mode: skip
+    tags:
+      - "3.20"
+      - "3.21"
+      - "3\\.2[0-9]"              # regex: all 3.2x patch releases
+
+  - type: image
+    source: busybox
+    destination: "registry.lab.cloudstacks.eu/ddrack/busybox"
+    push_mode: skip
+    tags:
+      - "1.37"
+
+  # ---------------------------------------------------------------------------
+  # Quay.io — Red Hat / community images
+  # ---------------------------------------------------------------------------
+  - type: image
+    source: quay.io/prometheus/node-exporter
+    destination: "registry.lab.cloudstacks.eu/ddrack/node-exporter"
+    push_mode: skip
+    tags:
+      - "v1.8.2"
+      - "v1\\.8\\.[0-9]+"         # regex: all v1.8.x releases
+
+  - type: image
+    source: quay.io/argoproj/argocd
+    destination: "registry.lab.cloudstacks.eu/ddrack/argocd"
+    push_mode: skip
+    tags:
+      - "v2.13.3"
+
+  # ---------------------------------------------------------------------------
+  # GHCR.io — GitHub Container Registry
+  # ---------------------------------------------------------------------------
+  - type: image
+    source: ghcr.io/external-secrets/external-secrets
+    destination: "registry.lab.cloudstacks.eu/ddrack/external-secrets"
+    push_mode: skip
+    tags:
+      - "v0.14.3"
+      - "v0\\.14\\.[0-9]+"        # regex: all v0.14.x releases

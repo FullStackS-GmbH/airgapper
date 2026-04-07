@@ -39,7 +39,7 @@ repos:
           - -cgeneral.ignore-merge-commits=true
           - -cgeneral.regex-style-search=True
           - -cgeneral.staged=true
-          - -ctitle-max-length.line-length=80
+          - -ctitle-max-length.line-length=100
           - '-ctitle-match-regex.regex=^(feat|fix|try|maintain)!?(\(.*\))?:.+|^Merge branch.*'
           - --msg-filename
 
@@ -50,13 +50,13 @@ repos:
         name: gofmt
         entry: gofmt -l -w
         language: system
-        types: [go]
+        types: [ go ]
 
       - id: go-vet
         name: go vet
         entry: go vet ./...
         language: system
-        types: [go]
+        types: [ go ]
         pass_filenames: false
         always_run: true
 
@@ -64,7 +64,7 @@ repos:
         name: golangci-lint
         entry: golangci-lint run ./...
         language: system
-        types: [go]
+        types: [ go ]
         pass_filenames: false
         always_run: true
 
@@ -72,6 +72,6 @@ repos:
         name: go test
         entry: go test ./...
         language: system
-        types: [go]
+        types: [ go ]
         pass_filenames: false
         always_run: true

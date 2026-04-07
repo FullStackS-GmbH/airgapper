@@ -1,0 +1,15 @@
+resources:
+  # ---------------------------------------------------------------------------
+  # OWASP Juice Shop — GitHub → private GitLab group
+  #
+  # The destination URL uses HTTPS with an embedded OAuth2 token.
+  # Replace GITLAB_PROJECT_PATH with the actual path after running:
+  #   ./tests/integration/run.sh setup
+  # ---------------------------------------------------------------------------
+  - type: git
+    source_repo: "https://github.com/juice-shop/juice-shop.git"
+    destination_repo: "https://oauth2:${GITLAB_TOKEN}@gitlab.com/${GITLAB_PROJECT_PATH}.git"
+    push_mode: force
+    refs:
+      - "main"
+      - "v[0-9]+\\.[0-9]+\\.[0-9]+"   # regex: all semver tags (e.g. v17.1.1)

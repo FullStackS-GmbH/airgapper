@@ -1,0 +1,46 @@
+resources:
+  # ---------------------------------------------------------------------------
+  # ArtifactHub / Bitnami OCI charts (hosted on Docker Hub OCI registry)
+  # ---------------------------------------------------------------------------
+  - type: helm
+    source_registry: registry-1.docker.io
+    source_chart: bitnamicharts/nginx
+    destination_registry: "registry.lab.cloudstacks.eu"
+    destination_repo: "ddrack/charts"
+    push_mode: skip
+    versions:
+      - "18.3.5"
+      - "18.3.4"
+      - "18\\.3\\.[0-9]+"         # regex: all 18.3.x patch versions
+
+  - type: helm
+    source_registry: registry-1.docker.io
+    source_chart: bitnamicharts/redis
+    destination_registry: "registry.lab.cloudstacks.eu"
+    destination_repo: "ddrack/charts"
+    push_mode: skip
+    versions:
+      - "20.11.3"
+
+  # ---------------------------------------------------------------------------
+  # JFrog Artifactory — legacy HTTP chart repository
+  # https://charts.jfrog.io is a classic Helm repo (index.yaml based)
+  # ---------------------------------------------------------------------------
+  - type: helm
+    source_registry: charts.jfrog.io
+    source_chart: artifactory
+    destination_registry: "registry.lab.cloudstacks.eu"
+    destination_repo: "ddrack/charts/jfrog"
+    push_mode: skip
+    versions:
+      - "107.98.14"
+      - "107.98.13"
+
+  - type: helm
+    source_registry: charts.jfrog.io
+    source_chart: xray
+    destination_registry: "registry.lab.cloudstacks.eu"
+    destination_repo: "ddrack/charts/jfrog"
+    push_mode: skip
+    versions:
+      - "104.98.6"

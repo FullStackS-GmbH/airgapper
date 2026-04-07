@@ -40,7 +40,8 @@ func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts d
 	}
 
 	for _, version := range resource.Versions {
-		vr := t.syncVersion(ctx, resource, version, opts, logger)
+		vr, ops := t.syncVersion(ctx, resource, version, opts, logger)
+		result.Operations = append(result.Operations, ops...)
 		switch vr.Status {
 		case domain.SyncStatusSynced:
 			result.Synced = append(result.Synced, vr)
@@ -55,21 +56,34 @@ func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts d
 }
 
 // syncVersion handles the sync logic for a single image version/tag.
-func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource, version string, opts domain.SyncOptions, logger *slog.Logger) domain.VersionResult {
+func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource, version string, opts domain.SyncOptions, logger *slog.Logger) (domain.VersionResult, []domain.OperationRecord) {
 	srcRef := buildRef(resource.Source, version)
 	dstRef := buildRef(resource.Destination, version)
 
 	logger = logger.With("version", version, "src", srcRef, "dst", dstRef)
 
+	op := func(operation domain.OperationType, msg string) domain.OperationRecord {
+		return domain.OperationRecord{
+			ResourceType: domain.ResourceTypeImage,
+			Operation:    operation,
+			Source:       srcRef,
+			Destination:  dstRef,
+			Version:      version,
+			Message:      msg,
+		}
+	}
+
 	// Resolve credentials.
 	srcCred, err := resolveCredentials(resource.SourceCredentialsRef, resource.Source, domain.CredentialTypeImage, opts.Credentials)
 	if err != nil {
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve source credentials: %w", err)}
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve source credentials: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "resolve source credentials: "+err.Error())}
 	}
 
 	dstCred, err := resolveCredentials(resource.TargetCredentialsRef, resource.Destination, domain.CredentialTypeImage, opts.Credentials)
 	if err != nil {
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve target credentials: %w", err)}
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve target credentials: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "resolve target credentials: "+err.Error())}
 	}
 
 	// Check if the image already exists at the destination.
@@ -79,15 +93,15 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 		// Non-fatal: proceed with the copy attempt.
 	}
 
-	if exists && resource.PushMode == domain.PushModeSkip {
-		logger.Info("image already exists at destination, skipping")
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "already exists"}
+	// Dry-run mode: report what would happen without mutating.
+	if opts.DryRun {
+		return t.dryRunResult(resource, version, exists, logger, op)
 	}
 
-	// Dry-run mode: log intent but do not copy.
-	if opts.DryRun {
-		logger.Info("dry-run: would copy image")
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "dry-run"}
+	if exists && resource.PushMode == domain.PushModeSkip {
+		logger.Info("image already exists at destination, skipping")
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "already exists"},
+			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
 	}
 
 	// Build crane options with authentication.
@@ -108,11 +122,42 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 	logger.Info("copying image")
 	if err := crane.Copy(srcRef, dstRef, craneOpts...); err != nil {
 		logger.Error("failed to copy image", "error", err)
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("copy image: %w", err)}
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("copy image: %w", err)},
+			[]domain.OperationRecord{op(domain.OpPull, "pull from source"), op(domain.OpFail, "copy failed: "+err.Error())}
 	}
 
 	logger.Info("image copied successfully")
-	return domain.VersionResult{Version: version, Status: domain.SyncStatusSynced, Message: "copied"}
+
+	var ops []domain.OperationRecord
+	ops = append(ops, op(domain.OpPull, "pulled from source"))
+	if exists && (resource.PushMode == domain.PushModeForce || resource.PushMode == domain.PushModeOverwrite) {
+		ops = append(ops, op(domain.OpForce, "force pushed (overwritten)"))
+	} else {
+		ops = append(ops, op(domain.OpPush, "pushed to destination"))
+	}
+	return domain.VersionResult{Version: version, Status: domain.SyncStatusSynced, Message: "copied"}, ops
+}
+
+// dryRunResult returns the appropriate dry-run result based on existence and push mode.
+func (t *Transporter) dryRunResult(resource domain.Resource, version string, exists bool, logger *slog.Logger, op func(domain.OperationType, string) domain.OperationRecord) (domain.VersionResult, []domain.OperationRecord) {
+	var msg string
+	var opRec domain.OperationRecord
+
+	switch {
+	case exists && resource.PushMode == domain.PushModeSkip:
+		msg = "dry-run: would skip (already exists)"
+		opRec = op(domain.OpSkip, msg)
+	case exists:
+		msg = "dry-run: would overwrite (already exists)"
+		opRec = op(domain.OpOverwrite, msg)
+	default:
+		msg = "dry-run: would sync"
+		opRec = op(domain.OpPush, msg)
+	}
+
+	logger.Info(msg)
+	return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: msg},
+		[]domain.OperationRecord{opRec}
 }
 
 // Exists checks whether a specific image tag exists at the given endpoint.

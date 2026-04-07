@@ -19,12 +19,15 @@ func TestSummarize(t *testing.T) {
 		{
 			name:    "empty results",
 			results: nil,
-			want:    syncpkg.Summary{},
+			want: syncpkg.Summary{
+				ByType: make(map[domain.ResourceType]syncpkg.ResourceTypeSummary),
+			},
 		},
 		{
 			name: "single result all synced",
 			results: []domain.SyncResult{
 				{
+					Resource: domain.Resource{Type: domain.ResourceTypeImage},
 					Synced: []domain.VersionResult{
 						{Version: "v1.0.0", Status: domain.SyncStatusSynced},
 						{Version: "v2.0.0", Status: domain.SyncStatusSynced},
@@ -35,18 +38,27 @@ func TestSummarize(t *testing.T) {
 				TotalResources: 1,
 				TotalVersions:  2,
 				Synced:         2,
+				ByType: map[domain.ResourceType]syncpkg.ResourceTypeSummary{
+					domain.ResourceTypeImage: {
+						Type:     domain.ResourceTypeImage,
+						Versions: 2,
+						Synced:   2,
+					},
+				},
 			},
 		},
 		{
 			name: "mixed results",
 			results: []domain.SyncResult{
 				{
-					Synced:  []domain.VersionResult{{Version: "v1.0.0"}},
-					Skipped: []domain.VersionResult{{Version: "v2.0.0"}},
-					Failed:  []domain.VersionResult{{Version: "v3.0.0"}},
+					Resource: domain.Resource{Type: domain.ResourceTypeImage},
+					Synced:   []domain.VersionResult{{Version: "v1.0.0"}},
+					Skipped:  []domain.VersionResult{{Version: "v2.0.0"}},
+					Failed:   []domain.VersionResult{{Version: "v3.0.0"}},
 				},
 				{
-					Synced: []domain.VersionResult{{Version: "v4.0.0"}},
+					Resource: domain.Resource{Type: domain.ResourceTypeHelm},
+					Synced:   []domain.VersionResult{{Version: "v4.0.0"}},
 				},
 			},
 			want: syncpkg.Summary{
@@ -55,12 +67,27 @@ func TestSummarize(t *testing.T) {
 				Synced:         2,
 				Skipped:        1,
 				Failed:         1,
+				ByType: map[domain.ResourceType]syncpkg.ResourceTypeSummary{
+					domain.ResourceTypeImage: {
+						Type:     domain.ResourceTypeImage,
+						Versions: 3,
+						Synced:   1,
+						Skipped:  1,
+						Failed:   1,
+					},
+					domain.ResourceTypeHelm: {
+						Type:     domain.ResourceTypeHelm,
+						Versions: 1,
+						Synced:   1,
+					},
+				},
 			},
 		},
 		{
 			name: "all failed",
 			results: []domain.SyncResult{
 				{
+					Resource: domain.Resource{Type: domain.ResourceTypeGit},
 					Failed: []domain.VersionResult{
 						{Version: "v1.0.0"},
 						{Version: "v2.0.0"},
@@ -71,6 +98,41 @@ func TestSummarize(t *testing.T) {
 				TotalResources: 1,
 				TotalVersions:  2,
 				Failed:         2,
+				ByType: map[domain.ResourceType]syncpkg.ResourceTypeSummary{
+					domain.ResourceTypeGit: {
+						Type:     domain.ResourceTypeGit,
+						Versions: 2,
+						Failed:   2,
+					},
+				},
+			},
+		},
+		{
+			name: "with operations",
+			results: []domain.SyncResult{
+				{
+					Resource: domain.Resource{Type: domain.ResourceTypeImage},
+					Synced:   []domain.VersionResult{{Version: "v1.0.0"}},
+					Operations: []domain.OperationRecord{
+						{Operation: domain.OpRead},
+						{Operation: domain.OpPull},
+						{Operation: domain.OpPush},
+					},
+				},
+			},
+			want: syncpkg.Summary{
+				TotalResources: 1,
+				TotalVersions:  1,
+				Synced:         1,
+				Operations:     syncpkg.OperationCounts{Read: 1, Pull: 1, Push: 1},
+				ByType: map[domain.ResourceType]syncpkg.ResourceTypeSummary{
+					domain.ResourceTypeImage: {
+						Type:       domain.ResourceTypeImage,
+						Versions:   1,
+						Synced:     1,
+						Operations: syncpkg.OperationCounts{Read: 1, Pull: 1, Push: 1},
+					},
+				},
 			},
 		},
 	}
@@ -130,4 +192,32 @@ func TestFormatResult(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFormatSummary(t *testing.T) {
+	t.Parallel()
+
+	s := syncpkg.Summary{
+		TotalResources: 3,
+		TotalVersions:  10,
+		Synced:         7,
+		Skipped:        2,
+		Failed:         1,
+		Operations:     syncpkg.OperationCounts{Read: 3, Pull: 7, Push: 7, Skip: 2, Fail: 1},
+		ByType: map[domain.ResourceType]syncpkg.ResourceTypeSummary{
+			domain.ResourceTypeImage: {Type: domain.ResourceTypeImage, Versions: 5, Synced: 4, Skipped: 1},
+			domain.ResourceTypeHelm:  {Type: domain.ResourceTypeHelm, Versions: 3, Synced: 2, Failed: 1},
+			domain.ResourceTypeGit:   {Type: domain.ResourceTypeGit, Versions: 2, Synced: 1, Skipped: 1},
+		},
+	}
+
+	got := syncpkg.FormatSummary(s)
+	assert.Contains(t, got, "Sync Summary")
+	assert.Contains(t, got, "Resources: 3")
+	assert.Contains(t, got, "Synced: 7")
+	assert.Contains(t, got, "read=3")
+	assert.Contains(t, got, "pull=7")
+	assert.Contains(t, got, "image: 5 versions")
+	assert.Contains(t, got, "helm: 3 versions")
+	assert.Contains(t, got, "git: 2 versions")
 }
