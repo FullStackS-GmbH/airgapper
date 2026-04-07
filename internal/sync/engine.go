@@ -11,10 +11,10 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/logging"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/pattern"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/logging"
+	"github.com/fullstacks-gmbh/airgapper/internal/pattern"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport"
 )
 
 // maxConcurrency is the maximum number of resources processed in parallel.

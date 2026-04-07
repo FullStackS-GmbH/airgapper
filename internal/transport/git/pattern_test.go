@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport/git"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/git"
 )
 
 func TestIsPattern(t *testing.T) {

@@ -1,4 +1,4 @@
-module github.com/fullstacks-gmbh/universal-airgapper
+module github.com/fullstacks-gmbh/airgapper
 
 go 1.25.0
 

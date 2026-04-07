@@ -6,16 +6,16 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/config"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/credentials"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/logging"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/scanner"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/sync"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport/git"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport/helm"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport/image"
+	"github.com/fullstacks-gmbh/airgapper/internal/config"
+	"github.com/fullstacks-gmbh/airgapper/internal/credentials"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/logging"
+	"github.com/fullstacks-gmbh/airgapper/internal/scanner"
+	"github.com/fullstacks-gmbh/airgapper/internal/sync"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/git"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/helm"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/image"
 )
 
 // newSyncCmd creates the "sync" subcommand that orchestrates artifact

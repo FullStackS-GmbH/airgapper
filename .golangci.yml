@@ -21,4 +21,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/fullstacks-gmbh/universal-airgapper
+        - github.com/fullstacks-gmbh/airgapper

@@ -6,7 +6,7 @@ package config
 import (
 	"strings"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
 
 // Config is the top-level configuration structure. It holds all scanners and

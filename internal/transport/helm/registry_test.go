@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport/helm"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/helm"
 )
 
 func TestIsOCIRegistry(t *testing.T) {

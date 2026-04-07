@@ -10,7 +10,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
 
 // Transporter handles synchronization of container images between registries.

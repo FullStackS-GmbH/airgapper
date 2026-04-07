@@ -26,11 +26,11 @@ FROM gcr.io/distroless/static-debian12:nonroot
 ARG APP_VERSION="dev"
 ARG APP_COMMIT_SHA="unknown"
 
-LABEL org.opencontainers.image.title="universal-airgapper" \
+LABEL org.opencontainers.image.title="airgapper" \
       org.opencontainers.image.description="Universal Airgapper - sync artifacts across air-gapped environments" \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.revision="${APP_COMMIT_SHA}" \
-      org.opencontainers.image.source="https://github.com/fullstacks-gmbh/universal-airgapper" \
+      org.opencontainers.image.source="https://github.com/fullstacks-gmbh/airgapper" \
       org.opencontainers.image.vendor="FULLSTACKS GmbH"
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/

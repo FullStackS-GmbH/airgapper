@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
 
 func TestEndpoint_String(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/cli"
+	"github.com/fullstacks-gmbh/airgapper/internal/cli"
 )
 
 // Set via ldflags at build time.

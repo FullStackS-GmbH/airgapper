@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
 
 // FileStore is a credential store backed by an in-memory list of credentials

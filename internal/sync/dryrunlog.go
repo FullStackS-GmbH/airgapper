@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
 
 // WriteDryRunLog writes a human-readable dry-run report to the specified path.

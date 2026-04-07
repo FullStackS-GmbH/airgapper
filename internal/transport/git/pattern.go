@@ -1,6 +1,6 @@
 package git
 
-import "github.com/fullstacks-gmbh/universal-airgapper/internal/pattern"
+import "github.com/fullstacks-gmbh/airgapper/internal/pattern"
 
 // IsPattern returns true if the string contains regex metacharacters.
 // It delegates to the shared pattern package.

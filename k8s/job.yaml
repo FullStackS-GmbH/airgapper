@@ -7,13 +7,13 @@ spec:
     spec:
       containers:
         - name: airgapper
-          image: ghcr.io/fullstacks-gmbh/universal-airgapper:latest
-          command: ["/airgapper"]
-          args: ["sync", "--config", "/mnt/config/", "--credentials", "/mnt/creds/"]
+          image: ghcr.io/fullstacks-gmbh/airgapper:latest
+          command: [ "/airgapper" ]
+          args: [ "sync", "--config", "/mnt/config/", "--credentials", "/mnt/creds/" ]
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
-              drop: ["ALL"]
+              drop: [ "ALL" ]
             runAsNonRoot: true
             seccompProfile:
               type: RuntimeDefault

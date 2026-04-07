@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/sync"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/sync"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport"
 )
 
 // mockTransporter implements domain.Transporter for testing.

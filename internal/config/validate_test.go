@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/config"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/config"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
 
 func TestValidate_ValidConfig(t *testing.T) {

@@ -3,9 +3,9 @@
 A Go CLI tool for synchronizing container images, Helm charts, and Git repositories across air-gapped environments.
 
 <!-- Badges -->
-![Build](https://img.shields.io/github/actions/workflow/status/fullstacks-gmbh/universal-airgapper/ci.yml?branch=main)
-![Release](https://img.shields.io/github/v/release/fullstacks-gmbh/universal-airgapper)
-![License](https://img.shields.io/github/license/fullstacks-gmbh/universal-airgapper)
+![Build](https://img.shields.io/github/actions/workflow/status/fullstacks-gmbh/airgapper/ci.yml?branch=main)
+![Release](https://img.shields.io/github/v/release/fullstacks-gmbh/airgapper)
+![License](https://img.shields.io/github/license/fullstacks-gmbh/airgapper)
 
 ---
 
@@ -32,7 +32,7 @@ Universal Airgapper reads a YAML configuration file listing artifacts (container
 
 ### Install
 
-Download the latest binary from [GitHub Releases](https://github.com/fullstacks-gmbh/universal-airgapper/releases), or build from source:
+Download the latest binary from [GitHub Releases](https://github.com/fullstacks-gmbh/airgapper/releases), or build from source:
 
 ```shell
 # Build from source (requires Go 1.23+)
@@ -42,7 +42,7 @@ CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o airgapper ./cmd/airgapper
 Or use the container image:
 
 ```shell
-docker pull ghcr.io/fullstacks-gmbh/universal-airgapper:latest
+docker pull ghcr.io/fullstacks-gmbh/airgapper:latest
 ```
 
 ### Configure
@@ -402,7 +402,7 @@ Use the CI component template. See [docs/gitlab-ci.md](docs/gitlab-ci.md).
 
 ```yaml
 include:
-  - component: <airgapper-repo-group>/universal-airgapper@1
+  - component: <airgapper-repo-group>/airgapper@1
     inputs:
       stage: run
       config-folder: ${CI_PROJECT_DIR}

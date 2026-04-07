@@ -6,7 +6,7 @@ package transport
 import (
 	"fmt"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
 
 // Factory creates and manages Transporter instances. It maps resource types to

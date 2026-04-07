@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/config"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/config"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
 
 // defaultTimeout is the fallback command timeout when none is configured.

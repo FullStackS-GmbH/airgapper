@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
-	syncpkg "github.com/fullstacks-gmbh/universal-airgapper/internal/sync"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	syncpkg "github.com/fullstacks-gmbh/airgapper/internal/sync"
 )
 
 func TestSummarize(t *testing.T) {

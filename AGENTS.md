@@ -33,7 +33,7 @@ internal/
 
 - Each `cmd/<name>/main.go` is a thin wrapper that wires dependencies and calls into `internal/` packages.
 - Group by domain concern, not by layer.
-- Keep `go.mod` at the repo root with module path `github.com/fullstacks-gmbh/universal-airgapper`.
+- Keep `go.mod` at the repo root with module path `github.com/fullstacks-gmbh/airgapper`.
 - Place shared types and interfaces in `internal/domain/` to avoid import cycles.
 - Define interfaces where they are consumed, not where they are implemented.
 

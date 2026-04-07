@@ -12,7 +12,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"helm.sh/helm/v4/pkg/registry"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
 
 // Transporter handles synchronization of Helm charts between registries. It

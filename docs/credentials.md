@@ -184,7 +184,7 @@ When using the container image, mount your SSH directory:
 docker run --rm \
   -v $(pwd)/.ssh:/home/nonroot/.ssh:ro \
   -v $(pwd)/configs:/mnt/configs \
-  ghcr.io/fullstacks-gmbh/universal-airgapper:latest \
+  ghcr.io/fullstacks-gmbh/airgapper:latest \
   sync --config /mnt/configs/
 ```
 
