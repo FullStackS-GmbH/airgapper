@@ -3,8 +3,9 @@ package image_test
 import (
 	"testing"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport/image"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport/image"
 )
 
 func TestParseImageRef(t *testing.T) {

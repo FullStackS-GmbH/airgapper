@@ -20,8 +20,7 @@ lint:
 
 ## fmt: Format all Go source files
 fmt:
-	gofmt -w .
-	goimports -w .
+	golangci-lint fmt
 
 ## vet: Run go vet
 vet:

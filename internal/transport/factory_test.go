@@ -5,10 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport"
 )
 
 type stubTransporter struct {

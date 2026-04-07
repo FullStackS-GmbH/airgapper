@@ -10,17 +10,15 @@ linters:
     - ineffassign
     - staticcheck
     - unused
+  settings:
+    lll:
+      line-length: 120
 
 formatters:
   enable:
     - gofmt
     - goimports
-
-linters-settings:
-  lll:
-    line-length: 120
-
-formatters-settings:
-  goimports:
-    local-prefixes:
-      - github.com/fullstacks-gmbh/universal-airgapper
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/fullstacks-gmbh/universal-airgapper

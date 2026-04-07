@@ -6,11 +6,12 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
 	"github.com/fullstacks-gmbh/universal-airgapper/internal/sync"
 	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // mockTransporter implements domain.Transporter for testing.

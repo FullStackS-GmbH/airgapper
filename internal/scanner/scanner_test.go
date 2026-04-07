@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/fullstacks-gmbh/universal-airgapper/internal/config"
 	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
 	"github.com/fullstacks-gmbh/universal-airgapper/internal/scanner"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestCommandScanner_Name(t *testing.T) {

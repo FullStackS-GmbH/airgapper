@@ -3,9 +3,10 @@ package sync_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
 	syncpkg "github.com/fullstacks-gmbh/universal-airgapper/internal/sync"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestSummarize(t *testing.T) {

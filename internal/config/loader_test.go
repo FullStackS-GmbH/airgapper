@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/fullstacks-gmbh/universal-airgapper/internal/config"
 )
 
 func TestLoad_SingleFile(t *testing.T) {
@@ -76,7 +77,7 @@ func TestLoad_TempFile(t *testing.T) {
 func TestLoadCredentials_Valid(t *testing.T) {
 	t.Parallel()
 
-	creds, err := config.LoadCredentials("testdata/credentials.yaml")
+	creds, err := config.LoadCredentials("testdata/ok_credentials.yaml")
 	require.NoError(t, err)
 
 	assert.Len(t, creds, 3)

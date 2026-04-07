@@ -3,8 +3,9 @@ package domain_test
 import (
 	"testing"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/fullstacks-gmbh/universal-airgapper/internal/domain"
 )
 
 func TestEndpoint_String(t *testing.T) {

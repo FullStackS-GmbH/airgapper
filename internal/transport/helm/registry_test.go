@@ -3,8 +3,9 @@ package helm_test
 import (
 	"testing"
 
-	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport/helm"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/fullstacks-gmbh/universal-airgapper/internal/transport/helm"
 )
 
 func TestIsOCIRegistry(t *testing.T) {

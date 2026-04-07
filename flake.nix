@@ -35,7 +35,6 @@
               pkgs.go_1_23
               pkgs.golangci-lint
               pkgs.goreleaser
-              pkgs.gotools
             ];
             shellHook = ''
               export AIRGAPPER_CONFIG=$(pwd)/config.yaml
