@@ -47,8 +47,8 @@ repos:
   - repo: local
     hooks:
       - id: go-fmt
-        name: gofmt
-        entry: gofmt -l -w
+        name: go fmt
+        entry: golangci-lint fmt ./...
         language: system
         types: [ go ]
 
