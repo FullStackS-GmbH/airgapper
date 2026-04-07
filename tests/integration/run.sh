@@ -157,21 +157,21 @@ EOF
   # -- Write rendered credential files ----------------------------------------
   header "Credential Files"
 
-  cat > "${CREDS_DIR}/image.yaml" <<EOF
+  cat > "${CREDS_DIR}/image.creds.airgapper.yaml" <<EOF
 image:
   - name: "${HARBOR_HOST}"
     username: "${HARBOR_USERNAME}"
     password: "${HARBOR_PASSWORD}"
 EOF
 
-  cat > "${CREDS_DIR}/helm.yaml" <<EOF
+  cat > "${CREDS_DIR}/helm.creds.airgapper.yaml" <<EOF
 helm:
   - name: "${HARBOR_HOST}"
     username: "${HARBOR_USERNAME}"
     password: "${HARBOR_PASSWORD}"
 EOF
 
-  cat > "${CREDS_DIR}/git.yaml" <<EOF
+  cat > "${CREDS_DIR}/git.creds.airgapper.yaml" <<EOF
 git:
   - name: "gitlab.com"
     username: "oauth2"
@@ -183,7 +183,7 @@ EOF
   # -- Write rendered git config with actual project path ---------------------
   header "Config Files"
 
-  cat > "${CONFIG_DIR}/git.airgapper.yaml" <<EOF
+  cat > "${CONFIG_DIR}/git.config.airgapper.yaml" <<EOF
 resources:
   # ---------------------------------------------------------------------------
   # OWASP Juice Shop — GitHub → private GitLab group

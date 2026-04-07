@@ -11,12 +11,18 @@ import (
 )
 
 // configFilePatterns lists the glob patterns used to discover airgapper
-// configuration files within a directory.
+// configuration files within a directory. The preferred pattern is
+// *.config.airgapper.yaml; legacy patterns are kept for backward compatibility.
 var configFilePatterns = []string{
-	"*.airgapper.yaml",
-	"*.airgapper.yml",
-	"*.cnairgapper.yaml",
-	"*.cnairgapper.yml",
+	"*.config.airgapper.yaml",
+	"*.config.airgapper.yml",
+}
+
+// credentialFilePatterns lists the glob patterns used to discover airgapper
+// credential files within a directory.
+var credentialFilePatterns = []string{
+	"*.creds.airgapper.yaml",
+	"*.creds.airgapper.yml",
 }
 
 // Load reads airgapper configuration from the given path. If path points to a
@@ -33,7 +39,7 @@ func Load(path string) (*Config, error) {
 
 	var files []string
 	if info.IsDir() {
-		files, err = discoverFiles(path)
+		files, err = discoverFiles(path, configFilePatterns)
 		if err != nil {
 			return nil, fmt.Errorf("discovering config files in %q: %w", path, err)
 		}
@@ -57,13 +63,13 @@ func Load(path string) (*Config, error) {
 	return merged, nil
 }
 
-// discoverFiles returns all files in dir that match the recognised airgapper
-// config patterns, sorted by glob expansion order.
-func discoverFiles(dir string) ([]string, error) {
+// discoverFiles returns all files in dir that match any of the given glob
+// patterns, deduplicated and in glob expansion order.
+func discoverFiles(dir string, patterns []string) ([]string, error) {
 	var found []string
 	seen := make(map[string]bool)
 
-	for _, pattern := range configFilePatterns {
+	for _, pattern := range patterns {
 		matches, err := filepath.Glob(filepath.Join(dir, pattern))
 		if err != nil {
 			return nil, err
@@ -110,9 +116,12 @@ type credentialEntry struct {
 	SSHKeyPath string `yaml:"ssh_key_path"`
 }
 
-// LoadCredentials reads a credentials YAML file and returns a flat slice of
-// domain.Credential values with the appropriate CredentialType set for each
-// entry.
+// LoadCredentials reads credentials from the given path and returns a flat
+// slice of domain.Credential values with the appropriate CredentialType set.
+//
+// If path points to a regular file it is loaded directly. If path points to a
+// directory, all files matching the credential file patterns
+// (*.creds.airgapper.yaml / *.creds.airgapper.yml) are discovered and merged.
 //
 // The expected file format groups credentials by type:
 //
@@ -130,6 +139,38 @@ type credentialEntry struct {
 //	    password: "token"
 //	    ssh_key_path: "/path/to/key"
 func LoadCredentials(path string) ([]domain.Credential, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("credentials path %q: %w", path, err)
+	}
+
+	var files []string
+	if info.IsDir() {
+		files, err = discoverFiles(path, credentialFilePatterns)
+		if err != nil {
+			return nil, fmt.Errorf("discovering credential files in %q: %w", path, err)
+		}
+		if len(files) == 0 {
+			return nil, fmt.Errorf("no credential files (*.creds.airgapper.yaml) found in %q", path)
+		}
+	} else {
+		files = []string{path}
+	}
+
+	var creds []domain.Credential
+	for _, f := range files {
+		fileCreds, err := loadSingleCredentialFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("loading credentials from %q: %w", f, err)
+		}
+		creds = append(creds, fileCreds...)
+	}
+
+	return creds, nil
+}
+
+// loadSingleCredentialFile reads and parses a single credentials YAML file.
+func loadSingleCredentialFile(path string) ([]domain.Credential, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading credentials file %q: %w", path, err)

@@ -47,7 +47,7 @@ docker pull ghcr.io/fullstacks-gmbh/universal-airgapper:latest
 
 ### Configure
 
-Create a configuration file (e.g., `config.airgapper.yaml`):
+Create a configuration file (e.g., `config.config.config.airgapper.yaml`):
 
 ```yaml
 resources:
@@ -63,19 +63,19 @@ resources:
 
 ```shell
 # Local binary
-airgapper sync --config ./config.airgapper.yaml
+airgapper sync --config ./config.config.airgapper.yaml
 
 # Docker
 docker run --rm \
-  -v $(pwd)/config.airgapper.yaml:/mnt/config.airgapper.yaml \
+  -v $(pwd)/config.config.airgapper.yaml:/mnt/config.config.airgapper.yaml \
   ghcr.io/fullstacks-gmbh/universal-airgapper:latest \
   sync --config /mnt/
 ```
 
 ## Configuration Reference
 
-Configuration files must be named `*.airgapper.yaml` or `*.airgapper.yml`.
-For backward compatibility, `*.cnairgapper.yaml` is also accepted. When a folder is provided via `--config`, all matching files are discovered and merged (resource lists are concatenated; scanner definitions are merged by name).
+Configuration files must be named `*.config.airgapper.yaml` or `*.config.airgapper.yml`.
+When a folder is provided via `--config`, all matching files are discovered and merged (resource lists are concatenated; scanner definitions are merged by name).
 
 See [docs/configuration.md](docs/configuration.md) for the full reference.
 
@@ -211,7 +211,9 @@ resources:
 
 ## Credentials Reference
 
-Credentials are provided in separate YAML files, organized by type. Provide them via `--credentials` (single file or folder).
+Credentials are provided in separate YAML files, organized by type.
+Provide them via `--credentials` (single file or folder).
+When pointing to a folder, files must match `*.creds.airgapper.yaml` or `*.creds.airgapper.yml`.
 
 See [docs/credentials.md](docs/credentials.md) for the full reference.
 
@@ -276,7 +278,7 @@ airgapper version    Print version, commit, and build date
 
 ```shell
 # Sync with a single config file
-airgapper sync --config config.airgapper.yaml
+airgapper sync --config config.config.airgapper.yaml
 
 # Sync with a folder of config files and credentials
 airgapper sync --config ./configs/ --credentials ./creds/

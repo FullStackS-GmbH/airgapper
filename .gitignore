@@ -31,6 +31,7 @@ tests/integration/.state.env
 local/
 tmp/
 sync_tmp/
+airgapper-*.log
 
 # IDE & AI
 .idea/

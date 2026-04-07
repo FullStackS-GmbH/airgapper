@@ -64,7 +64,7 @@ This command:
 - Creates the Harbor project (default: `ddrack`), or reuses it if it already exists.
 - Creates the GitLab project (default: `airgapper-juice-shop`) in the specified group, or reuses it if it already exists.
 - Writes rendered credential files into `tests/integration/creds/` with your actual secrets.
-- Writes the rendered git config with the real GitLab project path into `tests/integration/configs/git.airgapper.yaml`.
+- Writes the rendered git config with the real GitLab project path into `tests/integration/configs/git.config.airgapper.yaml`.
 - Saves project IDs to a state file so cleanup can find them later.
 
 ### 3. Run the airgapper
@@ -83,19 +83,19 @@ Or run each use-case individually:
 ```bash
 # Images only (Docker Hub, Quay, GHCR → Harbor)
 ./airgapper sync \
-  --config tests/integration/configs/images.airgapper.yaml \
+  --config tests/integration/configs/images.config.airgapper.yaml \
   --credentials tests/integration/creds/ \
   --debug
 
 # Git only (Juice Shop → GitLab)
 ./airgapper sync \
-  --config tests/integration/configs/git.airgapper.yaml \
+  --config tests/integration/configs/git.config.airgapper.yaml \
   --credentials tests/integration/creds/ \
   --debug
 
 # Helm only (Bitnami + JFrog → Harbor)
 ./airgapper sync \
-  --config tests/integration/configs/helm.airgapper.yaml \
+  --config tests/integration/configs/helm.config.airgapper.yaml \
   --credentials tests/integration/creds/ \
   --debug
 ```
@@ -128,18 +128,18 @@ tests/integration/
 ├── README.md                              # This file
 ├── run.sh                                 # Setup and cleanup script
 ├── configs/
-│   ├── images.airgapper.yaml              # Docker Hub + Quay + GHCR images
-│   ├── git.airgapper.yaml                 # Juice Shop git mirror
-│   └── helm.airgapper.yaml                # Bitnami OCI + JFrog Artifactory charts
+│   ├── images.config.airgapper.yaml       # Docker Hub + Quay + GHCR images
+│   ├── git.config.airgapper.yaml          # Juice Shop git mirror
+│   └── helm.config.airgapper.yaml         # Bitnami OCI + JFrog Artifactory charts
 └── creds/
-    ├── image.yaml                         # Harbor image registry credentials
-    ├── helm.yaml                          # Harbor helm registry credentials
-    └── git.yaml                           # GitLab HTTPS credentials
+    ├── image.creds.airgapper.yaml         # Harbor image registry credentials
+    ├── helm.creds.airgapper.yaml          # Harbor helm registry credentials
+    └── git.creds.airgapper.yaml           # GitLab HTTPS credentials
 ```
 
 ## Config details
 
-### Container images (`images.airgapper.yaml`)
+### Container images (`images.config.airgapper.yaml`)
 
 | Source     | Image                               | Tags                        | Pattern type     |
 |------------|-------------------------------------|-----------------------------|------------------|
@@ -151,7 +151,7 @@ tests/integration/
 
 All images are pushed to `registry.lab.cloudstacks.eu/ddrack/<image-name>` with `push_mode: skip`.
 
-### Git repository (`git.airgapper.yaml`)
+### Git repository (`git.config.airgapper.yaml`)
 
 | Source                             | Destination          | Refs                              | Pattern type               |
 |------------------------------------|----------------------|-----------------------------------|----------------------------|
@@ -160,7 +160,7 @@ All images are pushed to `registry.lab.cloudstacks.eu/ddrack/<image-name>` with 
 Uses `push_mode: force` because the destination starts empty.
 The `run.sh setup` command renders this file with the actual GitLab project path.
 
-### Helm charts (`helm.airgapper.yaml`)
+### Helm charts (`helm.config.airgapper.yaml`)
 
 | Source                          | Chart         | Versions                            | Pattern type     |
 |---------------------------------|---------------|-------------------------------------|------------------|
@@ -176,11 +176,11 @@ All charts are pushed to `registry.lab.cloudstacks.eu/ddrack/charts/` (Bitnami) 
 The credential files use hostname-based matching.
 No explicit `source_credentials_ref` or `target_credentials_ref` is needed because the credential `name` fields match the destination registry hostname.
 
-| File               | Type    | Matched host                  | Auth method            |
-|--------------------|---------|-------------------------------|------------------------|
-| `creds/image.yaml` | `image` | `registry.lab.cloudstacks.eu` | Username + password    |
-| `creds/helm.yaml`  | `helm`  | `registry.lab.cloudstacks.eu` | Username + password    |
-| `creds/git.yaml`   | `git`   | `gitlab.com`                  | OAuth2 token via HTTPS |
+| File                               | Type    | Matched host                  | Auth method            |
+|------------------------------------|---------|-------------------------------|------------------------|
+| `creds/image.creds.airgapper.yaml` | `image` | `registry.lab.cloudstacks.eu` | Username + password    |
+| `creds/helm.creds.airgapper.yaml`  | `helm`  | `registry.lab.cloudstacks.eu` | Username + password    |
+| `creds/git.creds.airgapper.yaml`   | `git`   | `gitlab.com`                  | OAuth2 token via HTTPS |
 
 Source registries (Docker Hub, Quay, GHCR, GitHub, `charts.jfrog.io`) use anonymous access since all source artifacts are public.
 
@@ -191,6 +191,6 @@ Source registries (Docker Hub, Quay, GHCR, GitHub, `charts.jfrog.io`) use anonym
 | `run.sh setup` fails with HTTP 409 on Harbor       | Project already exists                          | Safe to ignore; the script reuses existing projects                                      |
 | `run.sh setup` fails on GitLab create              | Token lacks `api` scope or wrong group ID       | Verify `GITLAB_TOKEN` scopes and `GITLAB_GROUP_ID`                                       |
 | Airgapper fails with `unauthorized` on Harbor push | Wrong credentials or project does not exist     | Re-run `run.sh setup`; check `HARBOR_USERNAME` and `HARBOR_PASSWORD`                     |
-| Git sync fails with `repository not found`         | GitLab project was not created or path is wrong | Check that `run.sh setup` completed and inspect `configs/git.airgapper.yaml`             |
+| Git sync fails with `repository not found`         | GitLab project was not created or path is wrong | Check that `run.sh setup` completed and inspect `configs/git.config.airgapper.yaml`      |
 | Helm sync fails on `charts.jfrog.io`               | JFrog may rate-limit or require auth            | Retry after a few minutes; add JFrog creds if needed                                     |
 | `run.sh cleanup` cannot find GitLab project        | State file missing or was manually deleted      | The script searches by name as a fallback; verify `GITLAB_PROJECT` and `GITLAB_GROUP_ID` |

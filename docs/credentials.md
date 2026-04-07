@@ -7,9 +7,10 @@ This document covers the credential file format, resolution logic, and security 
 Credentials are supplied via the `--credentials` flag (or `AIRGAPPER_CREDENTIALS` env var). The value can be:
 
 - A **single YAML file**: `--credentials creds.yaml`
-- A **folder of YAML files**: `--credentials ./creds/`
+- A **folder**: `--credentials ./creds/`
 
-When a folder is provided, all `*.yaml` and `*.yml` files in it are loaded and merged. Credentials are optional -- if omitted, anonymous access is used for all operations.
+When a folder is provided, all files matching `*.creds.airgapper.yaml` or `*.creds.airgapper.yml` are discovered and merged.
+Credentials are optional, if omitted, anonymous access is used for all operations.
 
 ## File Format
 
@@ -195,9 +196,9 @@ For separation of concerns, use a folder with multiple credential files:
 
 ```
 creds/
-  image-registries.yaml     # image credentials
-  helm-registries.yaml      # helm credentials
-  git-hosts.yaml            # git credentials
+  image.creds.airgapper.yaml   # image credentials
+  helm.creds.airgapper.yaml    # helm credentials
+  git.creds.airgapper.yaml     # git credentials
 ```
 
 ```shell

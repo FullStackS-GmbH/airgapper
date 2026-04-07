@@ -13,7 +13,7 @@ import (
 func TestLoad_SingleFile(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.Load("testdata/single.airgapper.yaml")
+	cfg, err := config.Load("testdata/single.config.airgapper.yaml")
 	require.NoError(t, err)
 
 	assert.Len(t, cfg.Scanners, 1)
@@ -104,6 +104,32 @@ func TestLoadCredentials_Empty(t *testing.T) {
 	creds, err := config.LoadCredentials("testdata/empty_credentials.yaml")
 	require.NoError(t, err)
 	assert.Empty(t, creds)
+}
+
+func TestLoadCredentials_Directory(t *testing.T) {
+	t.Parallel()
+
+	creds, err := config.LoadCredentials("testdata/creds_dir")
+	require.NoError(t, err)
+
+	// Should merge image.creds.airgapper.yaml + git.creds.airgapper.yaml
+	assert.Len(t, creds, 2)
+
+	names := make(map[string]bool)
+	for _, c := range creds {
+		names[c.Name] = true
+	}
+	assert.True(t, names["docker-hub"])
+	assert.True(t, names["github"])
+}
+
+func TestLoadCredentials_DirectoryNoFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	_, err := config.LoadCredentials(dir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no credential files")
 }
 
 func TestLoadCredentials_MissingFile(t *testing.T) {

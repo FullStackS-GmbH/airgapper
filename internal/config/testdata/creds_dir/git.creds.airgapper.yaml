@@ -1,0 +1,5 @@
+git:
+  - name: "github"
+    username: "gituser"
+    password: "gittoken"
+    ssh_key_path: "/path/to/key"
