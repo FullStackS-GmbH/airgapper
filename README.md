@@ -68,7 +68,7 @@ airgapper sync --config ./config.config.airgapper.yaml
 # Docker
 docker run --rm \
   -v $(pwd)/config.config.airgapper.yaml:/mnt/config.config.airgapper.yaml \
-  ghcr.io/fullstacks-gmbh/universal-airgapper:latest \
+  ghcr.io/fullstacks-gmbh/airgapper:latest \
   sync --config /mnt/
 ```
 
@@ -310,7 +310,7 @@ airgapper sync --config ./configs/ --credentials ./creds/
 docker run --rm \
   -v $(pwd)/configs:/mnt/configs \
   -v $(pwd)/creds:/mnt/creds \
-  ghcr.io/fullstacks-gmbh/universal-airgapper:latest \
+  ghcr.io/fullstacks-gmbh/airgapper:latest \
   sync --config /mnt/configs/ --credentials /mnt/creds/
 ```
 
@@ -321,7 +321,7 @@ docker run --rm \
   -v $(pwd)/.ssh:/home/nonroot/.ssh:ro \
   -v $(pwd)/configs:/mnt/configs \
   -v $(pwd)/creds:/mnt/creds \
-  ghcr.io/fullstacks-gmbh/universal-airgapper:latest \
+  ghcr.io/fullstacks-gmbh/airgapper:latest \
   sync --config /mnt/configs/ --credentials /mnt/creds/
 ```
 
@@ -339,7 +339,7 @@ spec:
     spec:
       containers:
         - name: airgapper
-          image: ghcr.io/fullstacks-gmbh/universal-airgapper:latest
+          image: ghcr.io/fullstacks-gmbh/airgapper:latest
           command: [ "/airgapper" ]
           args: [ "sync", "--config", "/mnt/config/", "--credentials", "/mnt/creds/" ]
           volumeMounts:
@@ -376,7 +376,7 @@ spec:
         spec:
           containers:
             - name: airgapper
-              image: ghcr.io/fullstacks-gmbh/universal-airgapper:latest
+              image: ghcr.io/fullstacks-gmbh/airgapper:latest
               command: [ "/airgapper" ]
               args: [ "sync", "--config", "/mnt/config/", "--credentials", "/mnt/creds/" ]
               # ... volume mounts as above

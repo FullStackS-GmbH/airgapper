@@ -35,7 +35,7 @@ All inputs are optional and have sensible defaults.
 |---------------------------|--------|---------------------------------------|-----------------------------------------------------------|
 | `job-name`                | string | `airgapper`                           | Display name for the job in the Actions UI                |
 | `image_registry`          | string | `ghcr.io`                             | Container registry hosting the airgapper image            |
-| `image_name`              | string | `fullstacks-gmbh/airgapper-ci`        | Image name (without registry or tag)                      |
+| `image_name`              | string | `fullstacks-gmbh/airgapper`           | Image name (without registry or tag)                      |
 | `image_tag`               | string | `latest`                              | Image tag to use                                          |
 | `image_pull_policy`       | string | `always`                              | Image pull policy (`always`, `if-not-present`, `never`)   |
 | `config-folder`           | string | (workspace)                           | Path to folder containing `*.airgapper.yaml` config files |

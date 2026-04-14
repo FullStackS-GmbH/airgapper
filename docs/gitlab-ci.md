@@ -26,7 +26,7 @@ include:
 | `stage`             | string | `run`                          |                 | Pipeline stage for the job                     |
 | `job-name`          | string | `airgapper`                    |                 | Job name in the pipeline                       |
 | `image_registry`    | string | `ghcr.io`                      |                 | Container registry hosting the airgapper image |
-| `image_name`        | string | `fullstacks-gmbh/airgapper-ci` |                 | Image name (without registry or tag)           |
+| `image_name`        | string | `fullstacks-gmbh/airgapper`    |                 | Image name (without registry or tag)           |
 | `image_tag`         | string | `latest`                       |                 | Image tag to use                               |
 | `image_pull_policy` | string | `always`                       |                 | Image pull policy                              |
 | `config-folder`     | string | `${CI_PROJECT_DIR}`            |                 | Path to folder containing config files         |
@@ -118,7 +118,7 @@ include:
     inputs:
       stage: run
       image_registry: registry.internal.corp
-      image_name: tools/universal-airgapper
+      image_name: tools/airgapper
       image_tag: "1.0.0"
       config-folder: ${CI_PROJECT_DIR}
       credentials-file: ${UNIVERSAL_AIRGAPPER_CREDS}
