@@ -118,7 +118,7 @@ include:
     inputs:
       stage: run
       image_registry: registry.internal.corp
-      image_name: tools/universal-airgapper
+      image_name: tools/airgapper
       image_tag: "1.0.0"
       config-folder: ${CI_PROJECT_DIR}
       credentials-file: ${UNIVERSAL_AIRGAPPER_CREDS}

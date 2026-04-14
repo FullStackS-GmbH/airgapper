@@ -23,20 +23,28 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -o /airgapper \
     ./cmd/airgapper
 
-# Stage 2: Minimal runtime image
-FROM gcr.io/distroless/static-debian12:nonroot
+# Stage 2: CI runtime image (SUSE BCI hardened base)
+FROM registry.suse.com/bci/bci-base:15.6
 
 ARG APP_VERSION="dev"
 ARG APP_COMMIT_SHA="unknown"
 
 LABEL org.opencontainers.image.title="airgapper" \
-      org.opencontainers.image.description="Universal Airgapper - sync artifacts across air-gapped environments" \
+      org.opencontainers.image.description="Universal Airgapper image with SUSE BCI hardened runtime" \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.revision="${APP_COMMIT_SHA}" \
       org.opencontainers.image.source="https://github.com/fullstacks-gmbh/airgapper" \
       org.opencontainers.image.vendor="FULLSTACKS GmbH"
 
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /airgapper /airgapper
+RUN zypper --non-interactive ref && \
+    zypper --non-interactive in --no-recommends \
+      bash \
+      ca-certificates \
+      git-core \
+      gzip \
+      openssh-clients \
+      tar && \
+    zypper clean --all
 
-ENTRYPOINT ["/airgapper"]
+RUN ln -sf /airgapper /usr/local/bin/airgapper
