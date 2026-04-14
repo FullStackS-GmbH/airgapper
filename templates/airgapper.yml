@@ -10,7 +10,7 @@ spec:
       description: "registry of the image to use"
     image_name:
       type: string
-      default: "fullstacks-gmbh/universal-airgapper"
+      default: "fullstacks-gmbh/airgapper"
       description: "name of the image"
     image_tag:
       type: string
@@ -29,7 +29,7 @@ spec:
     debug:
       description: "enable debug mode"
       default: ""
-      options: ['', '--debug']
+      options: [ '', '--debug' ]
 
 ---
 
@@ -37,7 +37,7 @@ $[[ inputs.job-name ]]:
   stage: $[[ inputs.stage ]]
   image:
     name: "$[[ inputs.image_registry ]]/$[[ inputs.image_name ]]:$[[ inputs.image_tag ]]"
-    entrypoint: [""]
+    entrypoint: [ "" ]
     pull_policy: $[[ inputs.image_pull_policy ]]
   script:
     - echo "========================================================"

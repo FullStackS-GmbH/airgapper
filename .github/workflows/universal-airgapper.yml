@@ -15,7 +15,7 @@ on:
         type: string
       image_name:
         description: "Name of the image"
-        default: "fullstacks-gmbh/universal-airgapper"
+        default: "fullstacks-gmbh/airgapper"
         required: false
         type: string
       image_tag:
@@ -46,6 +46,10 @@ on:
       GHCR_PAT:
         required: true
 
+# Restrict permissions to the minimum needed.
+permissions:
+  contents: read
+
 jobs:
   airgapper:
     name: ${{ inputs.job-name || 'airgapper' }}
@@ -58,23 +62,29 @@ jobs:
         password: ${{ secrets.GHCR_PAT }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Show config files
         run: |
-          CONFIG_FOLDER="${{ inputs.config-folder }}"
           if [ -z "$CONFIG_FOLDER" ]; then CONFIG_FOLDER="${GITHUB_WORKSPACE}"; fi
           echo "========================================================"
           echo "================ Universal Airgapper ==================="
           echo "====================== CONFIG =========================="
           cat "$CONFIG_FOLDER"/*.yaml || true
           echo "========================================================"
+        env:
+          CONFIG_FOLDER: ${{ inputs.config-folder }}
 
       - name: Write credentials file
-        run: echo "${{ secrets[inputs.credentials-secret-name] }}" > credentials.yaml
+        run: printf '%s' "$CREDENTIALS" > credentials.yaml
+        env:
+          CREDENTIALS: ${{ secrets[inputs.credentials-secret-name] }}
 
       - name: Run Universal Airgapper
         run: |
           /airgapper sync \
-            --config "${{ inputs.config-folder || github.workspace }}" \
-            --credentials credentials.yaml ${{ inputs.debug }}
+            --config "${CONFIG_FOLDER:-$GITHUB_WORKSPACE}" \
+            --credentials credentials.yaml $DEBUG_FLAG
+        env:
+          CONFIG_FOLDER: ${{ inputs.config-folder }}
+          DEBUG_FLAG: ${{ inputs.debug }}
