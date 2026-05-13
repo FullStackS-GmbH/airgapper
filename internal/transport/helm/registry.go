@@ -41,6 +41,8 @@ func IsOCIRegistry(registryURL string) bool {
 		return true
 	}
 
+	hasHTTPScheme := strings.HasPrefix(registryURL, "http://") || strings.HasPrefix(registryURL, "https://")
+
 	// Strip any scheme for hostname comparison.
 	host := registryURL
 	if idx := strings.Index(host, "://"); idx != -1 {
@@ -62,6 +64,10 @@ func IsOCIRegistry(registryURL string) bool {
 		return true
 	}
 
+	if !hasHTTPScheme && isLocalRegistryHost(host) {
+		return true
+	}
+
 	// Suffix match for cloud provider registries.
 	ociSuffixes := []string{
 		".azurecr.io",
@@ -76,6 +82,34 @@ func IsOCIRegistry(registryURL string) bool {
 	}
 
 	return false
+}
+
+func isLocalRegistryHost(host string) bool {
+	return host == "localhost" ||
+		host == "127.0.0.1" ||
+		strings.HasPrefix(host, "127.") ||
+		host == "0.0.0.0" ||
+		host == "host.docker.internal"
+}
+
+func needsPlainHTTP(registryURL string) bool {
+	if strings.HasPrefix(registryURL, "http://") {
+		return true
+	}
+
+	host := registryURL
+	host = strings.TrimPrefix(host, "oci://")
+	if idx := strings.Index(host, "://"); idx != -1 {
+		host = host[idx+3:]
+	}
+	if idx := strings.Index(host, "/"); idx != -1 {
+		host = host[:idx]
+	}
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+
+	return isLocalRegistryHost(host)
 }
 
 // NormalizeOCIRef builds an OCI reference string for a Helm chart. The

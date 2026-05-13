@@ -139,12 +139,12 @@ func (rc *ResourceConfig) ToResource() domain.Resource {
 	case "helm":
 		r.Type = domain.ResourceTypeHelm
 		r.Source = domain.Endpoint{
-			Registry:   rc.SourceRegistry,
-			Repository: rc.SourceChart,
+			Registry:   strings.TrimRight(strings.TrimSpace(rc.SourceRegistry), "/"),
+			Repository: strings.Trim(strings.TrimSpace(rc.SourceChart), "/"),
 		}
 		r.Destination = domain.Endpoint{
-			Registry:   rc.DestinationRegistry,
-			Repository: rc.DestinationRepo,
+			Registry:   strings.TrimRight(strings.TrimSpace(rc.DestinationRegistry), "/"),
+			Repository: strings.Trim(strings.TrimSpace(rc.DestinationRepo), "/"),
 		}
 		r.Versions = rc.Versions
 

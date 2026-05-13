@@ -417,6 +417,8 @@ type ResourceConfig struct {
 
 A version/tag/ref string is treated as a regex pattern if it contains any of: `*`, `+`, `[`, `]`, `{`, `}`, `(`, `)`, `\`, `^`, `$`, `|`, `?`.
 
+SemVer values with build metadata, such as `108.0.1+up2.8.10`, are treated as literal versions even though they contain `+`.
+
 When a pattern is detected:
 
 1. Call `transporter.ListVersions()` to get all available versions from the source.

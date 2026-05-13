@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/crane"
@@ -35,7 +36,9 @@ func (t *Transporter) Type() domain.ResourceType {
 // Sync copies Helm charts from source to destination for each version listed
 // in the resource. It respects the PushMode and DryRun settings.
 func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts domain.SyncOptions) (*domain.SyncResult, error) {
-	result := &domain.SyncResult{Resource: resource}
+	effectiveResource := resource
+	effectiveResource.Destination.Repository = destinationChartRepository(resource.Destination.Repository, resource.Source.Repository)
+	result := &domain.SyncResult{Resource: effectiveResource}
 	logger := opts.Logger
 	if logger == nil {
 		logger = t.logger
@@ -59,10 +62,11 @@ func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts d
 
 // syncVersion handles the sync logic for a single chart version.
 func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource, version string, opts domain.SyncOptions, logger *slog.Logger) (domain.VersionResult, []domain.OperationRecord) {
-	_ = ctx // reserved for future cancellation support
+	destination := resource.Destination
+	destination.Repository = destinationChartRepository(resource.Destination.Repository, resource.Source.Repository)
 
-	srcRef := NormalizeOCIRef(resource.Source.Registry, resource.Source.Repository, version)
-	dstRef := NormalizeOCIRef(resource.Destination.Registry, resource.Destination.Repository, version)
+	srcRef := chartRef(resource.Source, version)
+	dstRef := NormalizeOCIRef(destination.Registry, destination.Repository, version)
 
 	logger = logger.With("version", version, "src", srcRef, "dst", dstRef)
 
@@ -91,7 +95,7 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 	}
 
 	// Check if the chart already exists at the destination.
-	exists, err := t.Exists(ctx, resource.Destination, version, dstCred)
+	exists, err := t.Exists(ctx, destination, version, dstCred)
 	if err != nil {
 		logger.Warn("failed to check existence at destination", "error", err)
 	}
@@ -107,15 +111,15 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
 	}
 
-	// Create a Helm registry client for pull/push operations.
-	client, err := registry.NewClient(registry.ClientOptWriter(io.Discard))
+	// Create a Helm registry client for OCI pull/push operations.
+	client, err := newRegistryClient(resource.Source.Registry, resource.Destination.Registry)
 	if err != nil {
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create registry client: %w", err)},
 			[]domain.OperationRecord{op(domain.OpFail, "create registry client: "+err.Error())}
 	}
 
 	// Login to source registry.
-	if srcCred != nil {
+	if srcCred != nil && IsOCIRegistry(resource.Source.Registry) {
 		srcHost := extractHost(resource.Source.Registry)
 		if loginErr := client.Login(srcHost, registry.LoginOptBasicAuth(srcCred.Username, srcCred.Password)); loginErr != nil {
 			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to source %q: %w", srcHost, loginErr)},
@@ -134,21 +138,32 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 
 	// Pull chart from source.
 	logger.Info("pulling chart from source")
-	pullResult, err := client.Pull(srcRef)
-	if err != nil {
-		logger.Error("failed to pull chart", "error", err)
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("pull chart: %w", err)},
-			[]domain.OperationRecord{op(domain.OpFail, "pull chart: "+err.Error())}
+	var chartData []byte
+	if IsOCIRegistry(resource.Source.Registry) {
+		pullResult, err := client.Pull(srcRef)
+		if err != nil {
+			logger.Error("failed to pull chart", "error", err)
+			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("pull chart: %w", err)},
+				[]domain.OperationRecord{op(domain.OpFail, "pull chart: "+err.Error())}
+		}
+		chartData = pullResult.Chart.Data
+	} else {
+		var err error
+		chartData, srcRef, err = t.pullLegacyChart(ctx, resource.Source, version, srcCred)
+		if err != nil {
+			logger.Error("failed to pull chart", "error", err)
+			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("pull chart: %w", err)},
+				[]domain.OperationRecord{op(domain.OpFail, "pull chart: "+err.Error())}
+		}
 	}
 
-	// Build the destination reference without the version tag for push.
-	// The push target is "oci://registry/chart" and the version comes from
-	// the chart metadata.
-	dstPushRef := NormalizeOCIRef(resource.Destination.Registry, resource.Destination.Repository, "")
+	// Helm v4 strict mode expects the push target to end in
+	// "/{chart-name}:{chart-version}".
+	dstPushRef := dstRef
 
 	// Push chart to destination.
 	logger.Info("pushing chart to destination")
-	_, err = client.Push(pullResult.Chart.Data, dstPushRef)
+	_, err = client.Push(chartData, dstPushRef)
 	if err != nil {
 		logger.Error("failed to push chart", "error", err)
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push chart: %w", err)},
@@ -191,16 +206,15 @@ func (t *Transporter) dryRunResult(resource domain.Resource, version string, exi
 
 // Exists checks whether a specific chart version exists at the given endpoint.
 // For OCI registries, it checks for the OCI manifest using remote.Head. For
-// legacy registries, it attempts to fetch index.yaml and search for the chart
-// version (not yet implemented — returns false).
-func (t *Transporter) Exists(_ context.Context, endpoint domain.Endpoint, version string, creds *domain.Credential) (bool, error) {
+// legacy repositories, it fetches index.yaml and searches for the chart
+// version.
+func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, version string, creds *domain.Credential) (bool, error) {
 	if !IsOCIRegistry(endpoint.Registry) {
-		// Legacy HTTP repos are not yet supported for existence checks.
-		return false, nil
+		return t.legacyChartExists(ctx, endpoint, version, creds)
 	}
 
 	// Build an OCI reference for the manifest check.
-	ref := fmt.Sprintf("%s/%s:%s", extractHost(endpoint.Registry), endpoint.Repository, version)
+	ref := fmt.Sprintf("%s/%s:%s", extractHost(endpoint.Registry), endpoint.Repository, ociTag(version))
 
 	parsed, err := name.ParseReference(ref)
 	if err != nil {
@@ -218,10 +232,10 @@ func (t *Transporter) Exists(_ context.Context, endpoint domain.Endpoint, versio
 
 // ListVersions returns all available versions for a chart at the given
 // endpoint. For OCI registries, it lists tags using crane. For legacy
-// registries, it would parse index.yaml (not yet implemented).
-func (t *Transporter) ListVersions(_ context.Context, endpoint domain.Endpoint, creds *domain.Credential) ([]string, error) {
+// repositories, it parses index.yaml.
+func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint, creds *domain.Credential) ([]string, error) {
 	if !IsOCIRegistry(endpoint.Registry) {
-		return nil, fmt.Errorf("legacy chart repository listing not yet supported: %w", domain.ErrUnsupportedTransport)
+		return t.listLegacyVersions(ctx, endpoint, creds)
 	}
 
 	repo := fmt.Sprintf("%s/%s", extractHost(endpoint.Registry), endpoint.Repository)
@@ -232,7 +246,60 @@ func (t *Transporter) ListVersions(_ context.Context, endpoint domain.Endpoint, 
 		return nil, fmt.Errorf("list tags for %q: %w", repo, err)
 	}
 
+	for i := range tags {
+		tags[i] = strings.ReplaceAll(tags[i], "_", "+")
+	}
+
 	return tags, nil
+}
+
+func newRegistryClient(sourceRegistry, destinationRegistry string) (*registry.Client, error) {
+	if (IsOCIRegistry(sourceRegistry) && needsPlainHTTP(sourceRegistry)) || needsPlainHTTP(destinationRegistry) {
+		return registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptPlainHTTP())
+	}
+	return registry.NewClient(registry.ClientOptWriter(io.Discard))
+}
+
+func chartRef(endpoint domain.Endpoint, version string) string {
+	if IsOCIRegistry(endpoint.Registry) {
+		return NormalizeOCIRef(endpoint.Registry, endpoint.Repository, version)
+	}
+
+	base := legacyRepoBaseURL(endpoint.Registry)
+	if version == "" {
+		return fmt.Sprintf("%s/%s", base, endpoint.Repository)
+	}
+	return fmt.Sprintf("%s/%s:%s", base, endpoint.Repository, version)
+}
+
+func destinationChartRepository(destinationRepo, sourceChart string) string {
+	repo := strings.Trim(destinationRepo, "/")
+	name := chartName(sourceChart)
+	if name == "" {
+		return repo
+	}
+	if repo == "" {
+		return name
+	}
+	if chartName(repo) == name {
+		return repo
+	}
+	return repo + "/" + name
+}
+
+func chartName(repository string) string {
+	repository = strings.Trim(repository, "/")
+	if repository == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(repository, "/"); idx != -1 {
+		return repository[idx+1:]
+	}
+	return repository
+}
+
+func ociTag(version string) string {
+	return strings.ReplaceAll(version, "+", "_")
 }
 
 // helmCredToAuth converts a domain Credential to an authn.Authenticator.
