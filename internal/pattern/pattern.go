@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+var semVerWithBuildMetadata = regexp.MustCompile(`^v?[0-9]+(?:\.[0-9]+){1,2}(?:-[0-9A-Za-z.-]+)?\+[0-9A-Za-z.-]+$`)
+
 // metaChars contains the regex metacharacters that indicate a string is a
 // pattern rather than a literal version or ref name.
 const metaChars = `*+[]{}()\^$|?`
@@ -20,6 +22,9 @@ const metaChars = `*+[]{}()\^$|?`
 // patterns in the configuration file. Literal values are synced directly;
 // patterns are expanded against the available versions at the source.
 func IsPattern(s string) bool {
+	if semVerWithBuildMetadata.MatchString(s) {
+		return false
+	}
 	return strings.ContainsAny(s, metaChars)
 }
 

@@ -19,6 +19,8 @@ func TestIsPattern(t *testing.T) {
 	}{
 		{"literal version", "v1.0.0", false},
 		{"literal tag", "latest", false},
+		{"literal semver build metadata", "108.0.1+up2.8.10", false},
+		{"literal semver pre-release build metadata", "1.2.3-rc.1+build.7", false},
 		{"star wildcard", "v1.*", true},
 		{"plus quantifier", "v1.0+", true},
 		{"character class", "v[12].0", true},

@@ -197,6 +197,8 @@ scanners:
 
 A version/tag/ref string is treated as a **regex pattern** if it contains any of these characters: `*`, `+`, `[`, `]`, `{`, `}`, `(`, `)`, `\`, `^`, `$`, `|`, `?`.
 
+SemVer values with build metadata, such as `108.0.1+up2.8.10`, are treated as literal versions even though they contain `+`.
+
 When a pattern is detected:
 
 1. The tool calls `ListVersions()` to get all available versions from the source.
@@ -213,6 +215,7 @@ When a pattern is detected:
 | `release/.*`   | `release/1.0`, `release/hotfix`, etc.                  |
 | `main`         | Literal match: only `main`                             |
 | `"22.04"`      | Literal match: only `22.04` (no regex metacharacters)  |
+| `108.0.1+up2.8.10` | Literal Helm/SemVer build metadata version        |
 
 ## Full Example
 
