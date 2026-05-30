@@ -202,6 +202,39 @@ func (t *Transporter) dryRunResult(resource domain.Resource, version string, exi
 		[]domain.OperationRecord{opRec}
 }
 
+// PullChartBytes pulls a Helm chart and returns its raw tarball bytes.
+// It supports both OCI and legacy HTTP chart repositories.
+func (t *Transporter) PullChartBytes(ctx context.Context, resource domain.Resource, version string, credStore domain.CredentialStore) ([]byte, error) {
+	srcCred, err := resolveCredentials(resource.SourceCredentialsRef, resource.Source, domain.CredentialTypeHelm, credStore)
+	if err != nil {
+		return nil, fmt.Errorf("resolve source credentials: %w", err)
+	}
+
+	if !IsOCIRegistry(resource.Source.Registry) {
+		data, _, err := t.pullLegacyChart(ctx, resource.Source, version, srcCred)
+		return data, err
+	}
+
+	client, err := newRegistryClient(resource.Source.Registry, "")
+	if err != nil {
+		return nil, fmt.Errorf("create registry client: %w", err)
+	}
+
+	if srcCred != nil {
+		srcHost := extractHost(resource.Source.Registry)
+		if loginErr := client.Login(srcHost, registry.LoginOptBasicAuth(srcCred.Username, srcCred.Password)); loginErr != nil {
+			return nil, fmt.Errorf("login to source %q: %w", srcHost, loginErr)
+		}
+	}
+
+	srcRef := chartRef(resource.Source, version)
+	pullResult, err := client.Pull(srcRef)
+	if err != nil {
+		return nil, fmt.Errorf("pull chart: %w", err)
+	}
+	return pullResult.Chart.Data, nil
+}
+
 // Exists checks whether a specific chart version exists at the given endpoint.
 // For OCI registries, it checks for the OCI manifest using remote.Head. For
 // legacy repositories, it fetches index.yaml and searches for the chart
