@@ -109,6 +109,25 @@ func TestBuildOutputYAML_Shape(t *testing.T) {
 	assert.Contains(t, outStr, "# from helm: bitnamicharts/nginx:18.3.5, bitnamicharts/redis:20.11.3")
 }
 
+func TestBuildOutputYAML_SourcesDeduplicatedWithinChartVersion(t *testing.T) {
+	// Same tag from the same chart:version (multiple templates) must not
+	// produce duplicate source labels.
+	entries := []helmimages.ImageEntry{
+		{
+			Registry:   "docker.io",
+			Repository: "bitnami/nginx",
+			Tags: []helmimages.TagEntry{
+				{Tag: "1.27.3", Sources: []string{"bitnamicharts/nginx:18.3.5"}},
+			},
+		},
+	}
+	out, err := helmimages.BuildOutputYAML(entries, "reg.local", "my-cred")
+	require.NoError(t, err)
+	outStr := string(out)
+	// Source label must appear exactly once, not duplicated.
+	assert.Equal(t, 1, strings.Count(outStr, "bitnamicharts/nginx:18.3.5"))
+}
+
 func TestBuildOutputYAML_DestinationDerivation(t *testing.T) {
 	entries := []helmimages.ImageEntry{
 		{

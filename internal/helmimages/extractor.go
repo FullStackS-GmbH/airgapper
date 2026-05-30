@@ -64,6 +64,11 @@ func (e *Extractor) Extract(ctx context.Context, resources []domain.Resource, cr
 		if _, ok := sources[key][tag]; !ok {
 			tagOrder[key] = append(tagOrder[key], tag)
 		}
+		for _, s := range sources[key][tag] {
+			if s == source {
+				return
+			}
+		}
 		sources[key][tag] = append(sources[key][tag], source)
 	}
 
