@@ -46,13 +46,13 @@ internal/
 | Config  | `github.com/spf13/viper`         | YAML config + env vars + flags        |
 | Git     | `github.com/go-git/go-git/v5`    | Pure-Go git operations                |
 | Helm    | `helm.sh/helm/v4/pkg/action`     | Official Helm v4 SDK                  |
-| Images  | `github.com/containers/image/v5` | Same engine as skopeo/podman          |
+| Images  | `github.com/google/go-containerregistry` | Pure-Go registry client (crane/ko engine) |
 | Logging | `log/slog` (stdlib)              | JSON handler, OpenTelemetry semantics |
 | Testing | `github.com/stretchr/testify`    | Assertions and require                |
 
 ## Setup, Build, and Run
 
-- Requires Go 1.23+. Build with `go build ./cmd/airgapper`.
+- Requires Go 1.26.3+. Build with `go build ./cmd/airgapper`.
 - Run locally with `go run ./cmd/airgapper -- --help`.
 - Use `go mod tidy` after adding or removing dependencies; commit both `go.mod` and `go.sum`.
 - For reproducible builds: `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" ./cmd/airgapper`.
@@ -79,7 +79,7 @@ internal/
 
 ## CLI Design (cobra + viper)
 
-- Subcommands are verbs: `airgapper sync`, `airgapper version`.
+- Subcommands are verbs: `airgapper sync`, `airgapper helm images`, `airgapper version`.
 - Global flags: `--config` (config file/folder), `--credentials` (credentials file/folder), `--debug`, `--dry-run`.
 - Every flag has a short description, sensible default, and env-var override (`AIRGAPPER_` prefix).
 - Exit codes: `0` success, `1` general error, `2` usage/config error.

@@ -18,6 +18,7 @@ Universal Airgapper reads a YAML configuration file listing artifacts (container
 - Sync **container images** between any Docker v2-compatible registries (Docker Hub, GHCR, Harbor, Nexus, private registries)
 - Sync **Helm charts** between OCI registries and legacy HTTP chart repositories
 - Sync **Git repositories** between any hosting services (GitHub, GitLab, Bitbucket, Azure Repos, self-hosted) via HTTPS or SSH
+- **Helm image extraction** -- render Helm charts and extract all container image references, generating a ready-to-use image sync config for air-gapped registry migration
 - **Regex patterns** for tags, chart versions, and git refs -- sync all matching versions automatically
 - **Generic command scanner** -- run any external security/compliance tool before promoting an artifact
 - **Push modes**: `skip` (default), `force`, `overwrite` -- control what happens when an artifact already exists at the destination
