@@ -22,7 +22,7 @@ internal/
   config/                     # Viper-based config loading, validation, merging
   credentials/                # Credential store: file-based loading and resolution
   transport/                  # Transporter interface + factory/registry
-    image/                    # Container image sync (containers/image v5)
+    image/                    # Container image sync (go-containerregistry)
     helm/                     # Helm chart sync (Helm v4 SDK)
     git/                      # Git repo sync (go-git/go-git v5)
   scanner/                    # Generic external command scanner
@@ -108,7 +108,7 @@ internal/
 - All transports implement the same `Transporter` interface: `Sync(ctx, resource, creds) (*SyncResult, error)`.
 - Factory pattern selects the correct transporter based on resource type.
 - Each transport handles: existence checking, pulling, pushing, and push-mode logic (skip/force/overwrite).
-- Image transport uses `containers/image/v5` copy mechanism (same as skopeo).
+- Image transport uses `go-containerregistry` (crane) for pull, push, and tag listing.
 - Helm transport uses Helm v4 SDK for OCI and traditional repos.
 - Git transport uses `go-git/go-git/v5` for clone/push with HTTPS and SSH support.
 

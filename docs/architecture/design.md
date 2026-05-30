@@ -879,7 +879,7 @@ universal-airgapper-golang/
 │   │   ├── factory.go               # Transport factory + registry
 │   │   ├── factory_test.go
 │   │   ├── image/
-│   │   │   ├── transporter.go       # Image sync via containers/image v5
+│   │   │   ├── transporter.go       # Image sync via go-containerregistry
 │   │   │   ├── parse.go             # Image name parsing
 │   │   │   ├── transporter_test.go
 │   │   │   └── parse_test.go

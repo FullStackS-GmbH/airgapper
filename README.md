@@ -36,7 +36,7 @@ Universal Airgapper reads a YAML configuration file listing artifacts (container
 Download the latest binary from [GitHub Releases](https://github.com/fullstacks-gmbh/airgapper/releases), or build from source:
 
 ```shell
-# Build from source (requires Go 1.26+)
+# Build from source (requires Go 1.26.3+)
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o airgapper ./cmd/airgapper
 ```
 

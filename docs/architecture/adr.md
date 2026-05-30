@@ -42,18 +42,19 @@ It executes a parameterized shell command, checks the exit code, and captures ou
 - Users define their own command templates with placeholders like `{registry}`, `{repository}`, `{tag}`.
 - Trade-off: no structured vulnerability parsing (threshold counts). Users handle severity logic in their scanner command/script.
 
-### ADR-4: containers/image v5 for Image Transport
+### ADR-4: go-containerregistry for Image Transport
 
 **Context**: The Python version implements raw HTTP calls to the Docker Registry v2 API for pulling and pushing images.
 This is fragile, hard to maintain, and misses edge cases.
 
-**Decision**: Use `github.com/containers/image/v5` - the same library powering skopeo, podman, and buildah - for all container image operations.
+**Decision**: Use `github.com/google/go-containerregistry` - the library powering crane and ko - for all container image operations.
 
 **Consequences**:
 
-- Battle-tested image copy logic handling manifests, multi-arch, layer deduplication, auth challenges, and retries.
-- Dramatically less code to maintain compared to a hand-rolled HTTP client.
-- Slight increase in binary size due to the library's scope.
+- Pure-Go, CGO-free implementation with no system dependencies.
+- `crane.Copy` handles manifest fetching, layer transfer, and auth in one call.
+- Same library used by both the image transporter and the `helmimages` extractor, avoiding a second image-parsing dependency.
+- Slightly less feature-rich than `containers/image/v5` (no multi-arch copy in a single call), but sufficient for registry-to-registry sync.
 
 ### ADR-5: Constructor-Based Dependency Injection
 
