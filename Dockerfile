@@ -28,7 +28,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     ./cmd/airgapper
 
 # Stage 2: CI runtime image (SUSE BCI hardened base)
-FROM registry.suse.com/bci/bci-base:15.6
+FROM registry.suse.com/bci/bci-base:16.0
 
 ARG APP_VERSION="dev"
 ARG APP_COMMIT_SHA="unknown"
