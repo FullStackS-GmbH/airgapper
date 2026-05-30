@@ -13,9 +13,9 @@ import (
 func TestParseImageRef(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		input   string
-		wantReg string
+		name     string
+		input    string
+		wantReg  string
 		wantRepo string
 		wantTag  string
 	}{
