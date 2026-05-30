@@ -10,32 +10,29 @@ import (
 	"github.com/fullstacks-gmbh/airgapper/internal/helmimages"
 )
 
-func TestParseImageRef_DockerHubShort(t *testing.T) {
-	reg, repo, tag := helmimages.ParseImageRef("nginx")
-	assert.Equal(t, "docker.io", reg)
-	assert.Equal(t, "library/nginx", repo)
-	assert.Equal(t, "latest", tag)
-}
-
-func TestParseImageRef_DockerHubNamespaced(t *testing.T) {
-	reg, repo, tag := helmimages.ParseImageRef("bitnami/nginx:1.27.3-debian-12-r0")
-	assert.Equal(t, "docker.io", reg)
-	assert.Equal(t, "bitnami/nginx", repo)
-	assert.Equal(t, "1.27.3-debian-12-r0", tag)
-}
-
-func TestParseImageRef_FullRef(t *testing.T) {
-	reg, repo, tag := helmimages.ParseImageRef("ghcr.io/org/app:v1.2.3")
-	assert.Equal(t, "ghcr.io", reg)
-	assert.Equal(t, "org/app", repo)
-	assert.Equal(t, "v1.2.3", tag)
-}
-
-func TestParseImageRef_ExplicitDockerIO(t *testing.T) {
-	reg, repo, tag := helmimages.ParseImageRef("docker.io/bitnami/nginx:1.27.3")
-	assert.Equal(t, "docker.io", reg)
-	assert.Equal(t, "bitnami/nginx", repo)
-	assert.Equal(t, "1.27.3", tag)
+func TestParseImageRef(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		input   string
+		wantReg string
+		wantRepo string
+		wantTag  string
+	}{
+		{"docker hub short name", "nginx", "docker.io", "library/nginx", "latest"},
+		{"docker hub namespaced", "bitnami/nginx:1.27.3-debian-12-r0", "docker.io", "bitnami/nginx", "1.27.3-debian-12-r0"},
+		{"full ref with host", "ghcr.io/org/app:v1.2.3", "ghcr.io", "org/app", "v1.2.3"},
+		{"explicit docker.io prefix", "docker.io/bitnami/nginx:1.27.3", "docker.io", "bitnami/nginx", "1.27.3"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			reg, repo, tag := helmimages.ParseImageRef(tc.input)
+			assert.Equal(t, tc.wantReg, reg)
+			assert.Equal(t, tc.wantRepo, repo)
+			assert.Equal(t, tc.wantTag, tag)
+		})
+	}
 }
 
 func TestExtractImagesFromYAML_Deployment(t *testing.T) {

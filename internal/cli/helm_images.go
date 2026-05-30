@@ -22,8 +22,12 @@ func newHelmImagesCmd() *cobra.Command {
 	}
 	cmd.Flags().StringP("output", "o", "", "Path to write the generated image config YAML")
 	cmd.Flags().String("target-credentials-ref", "", "Name of a helm credential entry (its Name field is used as destination registry)")
-	_ = cmd.MarkFlagRequired("output")
-	_ = cmd.MarkFlagRequired("target-credentials-ref")
+
+	_ = viper.BindPFlag("helm_images_output", cmd.Flags().Lookup("output"))
+	_ = viper.BindPFlag("helm_images_target_credentials_ref", cmd.Flags().Lookup("target-credentials-ref"))
+	_ = viper.BindEnv("helm_images_output", "AIRGAPPER_HELM_IMAGES_OUTPUT")
+	_ = viper.BindEnv("helm_images_target_credentials_ref", "AIRGAPPER_HELM_IMAGES_TARGET_CREDENTIALS_REF")
+
 	return cmd
 }
 
@@ -32,13 +36,19 @@ func runHelmImages(cmd *cobra.Command, _ []string) error {
 	credsPath := viper.GetString("credentials")
 	debug := viper.GetBool("debug")
 	logFormat := viper.GetString("log_format")
-	targetCredRef, _ := cmd.Flags().GetString("target-credentials-ref")
-	outputPath, _ := cmd.Flags().GetString("output")
+	targetCredRef := viper.GetString("helm_images_target_credentials_ref")
+	outputPath := viper.GetString("helm_images_output")
 
 	logger := logging.NewLogger(debug, logFormat)
 
 	if configPath == "" {
 		return fmt.Errorf("--config flag or AIRGAPPER_CONFIG env var is required")
+	}
+	if outputPath == "" {
+		return fmt.Errorf("--output flag or AIRGAPPER_HELM_IMAGES_OUTPUT env var is required")
+	}
+	if targetCredRef == "" {
+		return fmt.Errorf("--target-credentials-ref flag or AIRGAPPER_HELM_IMAGES_TARGET_CREDENTIALS_REF env var is required")
 	}
 
 	cfg, err := config.Load(configPath)

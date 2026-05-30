@@ -27,7 +27,8 @@ internal/
     git/                      # Git repo sync (go-git/go-git v5)
   scanner/                    # Generic external command scanner
   sync/                       # Orchestration engine — coordinates transports + scanners
-  cli/                        # Cobra command definitions (root, sync, version)
+  helmimages/                 # Helm chart image extraction — renders charts, parses image refs, emits airgapper config
+  cli/                        # Cobra command definitions (root, sync, version, helm images)
   logging/                    # Structured logging setup (slog, JSON, OpenTelemetry semantics)
 ```
 
