@@ -7,6 +7,13 @@ builds:
     binary: airgapper
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    tags:
+      - containers_image_openpgp
+      - exclude_graphdriver_btrfs
+      - exclude_graphdriver_devicemapper
+      - exclude_graphdriver_overlay
     ldflags:
       - -s -w -X main.version={{ .Tag }} -X main.commit={{ .ShortCommit }} -X main.date={{ .Date }}
     goos:

@@ -7,13 +7,11 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/crane"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"go.podman.io/image/v5/docker"
 	"helm.sh/helm/v4/pkg/registry"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	transportregistry "github.com/fullstacks-gmbh/airgapper/internal/transport/registry"
 )
 
 // Transporter handles synchronization of Helm charts between registries. It
@@ -214,19 +212,17 @@ func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, vers
 	}
 
 	// Build an OCI reference for the manifest check.
-	ref := fmt.Sprintf("%s/%s:%s", extractHost(endpoint.Registry), endpoint.Repository, ociTag(version))
+	refStr := fmt.Sprintf("%s/%s:%s", extractHost(endpoint.Registry), endpoint.Repository, ociTag(version))
 
-	parsed, err := name.ParseReference(ref)
+	ref, _, err := transportregistry.ParseDockerRef(refStr)
 	if err != nil {
-		return false, fmt.Errorf("parse reference %q: %w", ref, err)
+		return false, fmt.Errorf("parse reference %q: %w", refStr, err)
 	}
 
-	auth := helmCredToAuth(creds)
-	_, err = remote.Head(parsed, remote.WithAuth(auth))
-	if err != nil {
+	sys := transportregistry.SystemContext(creds, false)
+	if _, err := docker.GetDigest(ctx, sys, ref); err != nil {
 		return false, nil
 	}
-
 	return true, nil
 }
 
@@ -239,9 +235,13 @@ func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint
 	}
 
 	repo := fmt.Sprintf("%s/%s", extractHost(endpoint.Registry), endpoint.Repository)
-	auth := helmCredToAuth(creds)
+	ref, _, err := transportregistry.ParseRepoRef(repo)
+	if err != nil {
+		return nil, fmt.Errorf("parse repo %q: %w", repo, err)
+	}
 
-	tags, err := crane.ListTags(repo, crane.WithAuth(auth))
+	sys := transportregistry.SystemContext(creds, false)
+	tags, err := docker.GetRepositoryTags(ctx, sys, ref)
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %q: %w", repo, err)
 	}
@@ -300,14 +300,6 @@ func chartName(repository string) string {
 
 func ociTag(version string) string {
 	return strings.ReplaceAll(version, "+", "_")
-}
-
-// helmCredToAuth converts a domain Credential to an authn.Authenticator.
-func helmCredToAuth(cred *domain.Credential) authn.Authenticator {
-	if cred == nil {
-		return authn.Anonymous
-	}
-	return &authn.Basic{Username: cred.Username, Password: cred.Password}
 }
 
 // resolveCredentials resolves credentials for an endpoint. If credRef is

@@ -20,13 +20,13 @@ func TestParseImageRef(t *testing.T) {
 		{
 			name:     "simple name expands to Docker Hub library",
 			ref:      "ubuntu",
-			wantReg:  "index.docker.io",
+			wantReg:  "docker.io",
 			wantRepo: "library/ubuntu",
 		},
 		{
 			name:     "namespaced expands to Docker Hub",
 			ref:      "myrepo/image",
-			wantReg:  "index.docker.io",
+			wantReg:  "docker.io",
 			wantRepo: "myrepo/image",
 		},
 		{

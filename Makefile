@@ -6,17 +6,22 @@ DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 IMAGE   ?= ghcr.io/fullstacks-gmbh/airgapper
 
+# Build tags required by go.podman.io/image/v5 (containers/container-libs):
+#   containers_image_openpgp         - skip gpgme CGO dep (we don't sign locally)
+#   exclude_graphdriver_btrfs/...    - skip storage backends (only docker:// transport is used)
+BUILD_TAGS := containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay
+
 ## build: Build the binary for the current platform
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o airgapper ./cmd/airgapper
+	CGO_ENABLED=0 go build -tags=$(BUILD_TAGS) -trimpath -ldflags="$(LDFLAGS)" -o airgapper ./cmd/airgapper
 
 ## test: Run all tests with race detection
 test:
-	go test -race ./...
+	go test -tags=$(BUILD_TAGS) -race ./...
 
 ## lint: Run golangci-lint
 lint:
-	golangci-lint run ./...
+	golangci-lint run --build-tags=$(BUILD_TAGS) ./...
 
 ## fmt: Format all Go source files
 fmt:
@@ -24,7 +29,7 @@ fmt:
 
 ## vet: Run go vet
 vet:
-	go vet ./...
+	go vet -tags=$(BUILD_TAGS) ./...
 
 ## release-snapshot: Build multi-arch binaries locally via goreleaser (no publish)
 release-snapshot:

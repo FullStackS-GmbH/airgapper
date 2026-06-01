@@ -3,19 +3,19 @@ package image
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/crane"
-	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"go.podman.io/image/v5/copy"
+	"go.podman.io/image/v5/docker"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/registry"
 )
 
 // Transporter handles synchronization of container images between registries.
-// It uses the go-containerregistry library (the same library that powers
-// crane and ko) for pure-Go, CGO-free registry operations.
+// It uses the containers/image library (go.podman.io/image/v5) — the same
+// library that powers Skopeo/Podman/Buildah — for registry operations.
 type Transporter struct {
 	logger *slog.Logger
 }
@@ -57,23 +57,22 @@ func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts d
 
 // syncVersion handles the sync logic for a single image version/tag.
 func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource, version string, opts domain.SyncOptions, logger *slog.Logger) (domain.VersionResult, []domain.OperationRecord) {
-	srcRef := buildRef(resource.Source, version)
-	dstRef := buildRef(resource.Destination, version)
+	srcRefStr := buildRef(resource.Source, version)
+	dstRefStr := buildRef(resource.Destination, version)
 
-	logger = logger.With("version", version, "src", srcRef, "dst", dstRef)
+	logger = logger.With("version", version, "src", srcRefStr, "dst", dstRefStr)
 
 	op := func(operation domain.OperationType, msg string) domain.OperationRecord {
 		return domain.OperationRecord{
 			ResourceType: domain.ResourceTypeImage,
 			Operation:    operation,
-			Source:       srcRef,
-			Destination:  dstRef,
+			Source:       srcRefStr,
+			Destination:  dstRefStr,
 			Version:      version,
 			Message:      msg,
 		}
 	}
 
-	// Resolve credentials.
 	srcCred, err := resolveCredentials(resource.SourceCredentialsRef, resource.Source, domain.CredentialTypeImage, opts.Credentials)
 	if err != nil {
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve source credentials: %w", err)},
@@ -86,14 +85,11 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 			[]domain.OperationRecord{op(domain.OpFail, "resolve target credentials: "+err.Error())}
 	}
 
-	// Check if the image already exists at the destination.
 	exists, err := t.Exists(ctx, resource.Destination, version, dstCred)
 	if err != nil {
 		logger.Warn("failed to check existence at destination", "error", err)
-		// Non-fatal: proceed with the copy attempt.
 	}
 
-	// Dry-run mode: report what would happen without mutating.
 	if opts.DryRun {
 		return t.dryRunResult(resource, version, exists, logger, op)
 	}
@@ -104,23 +100,31 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
 	}
 
-	// Build crane options with authentication.
-	craneOpts := []crane.Option{crane.WithContext(ctx)}
-	srcAuth := credToAuth(srcCred)
-	dstAuth := credToAuth(dstCred)
+	srcRef, _, err := registry.ParseDockerRef(srcRefStr)
+	if err != nil {
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: err},
+			[]domain.OperationRecord{op(domain.OpFail, err.Error())}
+	}
+	dstRef, _, err := registry.ParseDockerRef(dstRefStr)
+	if err != nil {
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: err},
+			[]domain.OperationRecord{op(domain.OpFail, err.Error())}
+	}
 
-	craneOpts = append(craneOpts, crane.WithAuthFromKeychain(keychainFunc(func(res authn.Resource) (authn.Authenticator, error) {
-		// Determine which auth to use based on the registry being accessed.
-		srcReg, _ := ParseImageRef(srcRef)
-		if res.RegistryStr() == srcReg {
-			return srcAuth, nil
-		}
-		return dstAuth, nil
-	})))
+	policyCtx, err := registry.PermissivePolicyContext()
+	if err != nil {
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: err},
+			[]domain.OperationRecord{op(domain.OpFail, err.Error())}
+	}
 
-	// Copy the image from source to destination.
 	logger.Info("copying image")
-	if err := crane.Copy(srcRef, dstRef, craneOpts...); err != nil {
+	_, err = copy.Image(ctx, policyCtx, dstRef, srcRef, &copy.Options{
+		SourceCtx:          registry.SystemContext(srcCred, false),
+		DestinationCtx:     registry.SystemContext(dstCred, false),
+		ImageListSelection: copy.CopyAllImages,
+		ReportWriter:       io.Discard,
+	})
+	if err != nil {
 		logger.Error("failed to copy image", "error", err)
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("copy image: %w", err)},
 			[]domain.OperationRecord{op(domain.OpPull, "pull from source"), op(domain.OpFail, "copy failed: "+err.Error())}
@@ -161,37 +165,35 @@ func (t *Transporter) dryRunResult(resource domain.Resource, version string, exi
 }
 
 // Exists checks whether a specific image tag exists at the given endpoint.
-// It returns false on 404 and true otherwise.
-func (t *Transporter) Exists(_ context.Context, endpoint domain.Endpoint, version string, creds *domain.Credential) (bool, error) {
-	ref := buildRef(endpoint, version)
-
-	parsed, err := name.ParseReference(ref)
+// Any error from the registry (404, auth, network) is treated as "not found"
+// to match the prior go-containerregistry behavior.
+func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, version string, creds *domain.Credential) (bool, error) {
+	refStr := buildRef(endpoint, version)
+	ref, _, err := registry.ParseDockerRef(refStr)
 	if err != nil {
-		return false, fmt.Errorf("parse reference %q: %w", ref, err)
+		return false, fmt.Errorf("parse reference %q: %w", refStr, err)
 	}
 
-	auth := credToAuth(creds)
-	_, err = remote.Head(parsed, remote.WithAuth(auth))
-	if err != nil {
-		// Treat any error as "not found" for existence checks. In practice,
-		// go-containerregistry returns a transport error with status 404 when
-		// the manifest is not found.
+	sys := registry.SystemContext(creds, false)
+	if _, err := docker.GetDigest(ctx, sys, ref); err != nil {
 		return false, nil
 	}
-
 	return true, nil
 }
 
 // ListVersions returns all tags available at the given endpoint.
-func (t *Transporter) ListVersions(_ context.Context, endpoint domain.Endpoint, creds *domain.Credential) ([]string, error) {
+func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint, creds *domain.Credential) ([]string, error) {
 	repo := endpoint.String()
+	ref, _, err := registry.ParseRepoRef(repo)
+	if err != nil {
+		return nil, fmt.Errorf("parse repo %q: %w", repo, err)
+	}
 
-	auth := credToAuth(creds)
-	tags, err := crane.ListTags(repo, crane.WithAuth(auth))
+	sys := registry.SystemContext(creds, false)
+	tags, err := docker.GetRepositoryTags(ctx, sys, ref)
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %q: %w", repo, err)
 	}
-
 	return tags, nil
 }
 
@@ -200,16 +202,6 @@ func (t *Transporter) ListVersions(_ context.Context, endpoint domain.Endpoint, 
 func buildRef(ep domain.Endpoint, version string) string {
 	base := ep.String()
 	return base + ":" + version
-}
-
-// credToAuth converts a domain Credential to an authn.Authenticator suitable
-// for go-containerregistry operations. If the credential is nil, anonymous
-// access is used.
-func credToAuth(cred *domain.Credential) authn.Authenticator {
-	if cred == nil {
-		return authn.Anonymous
-	}
-	return &authn.Basic{Username: cred.Username, Password: cred.Password}
 }
 
 // resolveCredentials resolves credentials for an endpoint. If credRef is
@@ -234,13 +226,4 @@ func resolveCredentials(credRef string, endpoint domain.Endpoint, credType domai
 		return nil, fmt.Errorf("resolve credential for host %q: %w", endpoint.Registry, err)
 	}
 	return cred, nil
-}
-
-// keychainFunc adapts a function to the authn.Keychain interface so that
-// different authenticators can be returned depending on the target registry.
-type keychainFunc func(authn.Resource) (authn.Authenticator, error)
-
-// Resolve implements authn.Keychain.
-func (f keychainFunc) Resolve(r authn.Resource) (authn.Authenticator, error) {
-	return f(r)
 }
