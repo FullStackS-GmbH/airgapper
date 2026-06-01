@@ -35,7 +35,7 @@ Universal Airgapper reads a YAML configuration file listing artifacts (container
 Download the latest binary from [GitHub Releases](https://github.com/fullstacks-gmbh/airgapper/releases), or build from source:
 
 ```shell
-# Build from source (requires Go 1.23+)
+# Build from source (requires Go 1.26+)
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o airgapper ./cmd/airgapper
 ```
 
@@ -435,7 +435,7 @@ For the full C4 architecture model and detailed design, see [docs/architecture/]
 
 ### Prerequisites
 
-- Go 1.23+
+- Go 1.26+
 - [direnv](https://direnv.net/) (optional, for automatic env setup)
 - [Nix](https://nixos.org/) (optional, provides reproducible toolchain via `flake.nix`)
 - Docker (for container builds)
