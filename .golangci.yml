@@ -2,6 +2,11 @@ version: "2"
 
 run:
   timeout: 5m
+  build-tags:
+    - containers_image_openpgp
+    - exclude_graphdriver_btrfs
+    - exclude_graphdriver_devicemapper
+    - exclude_graphdriver_overlay
 
 linters:
   enable:

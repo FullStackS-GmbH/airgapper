@@ -42,7 +42,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Test
-        run: go test -v ./...
+        run: go test -tags=containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay -v ./...
 
   tag:
     name: "[tag] go-semantic-release"
