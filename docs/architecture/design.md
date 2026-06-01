@@ -76,6 +76,8 @@ Layer 3 (Domain) depends on nothing. Layer 4 (Infrastructure) implements interfa
 
 - `root.go` - Root cobra command. Defines global persistent flags: `--config`, `--credentials`, `--debug`, `--dry-run`. Binds flags to viper. Initializes logging.
 - `sync.go` - `sync` subcommand. Loads config, creates credential store, builds transporter factory, creates sync engine, runs engine, prints results, returns exit code.
+- `helm.go` - `helm` subcommand group. Parent command for Helm-related utilities.
+- `helm_images.go` - `helm images` subcommand. Pulls and renders Helm charts, extracts image references, writes an airgapper image config YAML ready for `airgapper sync`.
 - `version.go` - `version` subcommand. Prints version, commit SHA, build date (injected via ldflags).
 
 **Design pattern**: Command pattern (each cobra subcommand encapsulates a complete action).
@@ -483,16 +485,14 @@ The git transporter reads that env var to obtain the `Authorization` header for 
 
 ### Image Transporter (`internal/transport/image/`)
 
-**Library**: `github.com/containers/image/v5`
+**Library**: `github.com/google/go-containerregistry` (same engine as crane and ko)
 
-**How it works** (modeled after skopeo's copy mechanism):
+**How it works**:
 
-1. **Parse references**: Convert source/destination strings to `types.ImageReference` using the `docker` transport.
-2. **Create SystemContext**: Set auth credentials, TLS settings, architecture preference.
-3. **Copy**: Call `copy.Image(ctx, policyContext, destRef, srcRef, &copy.Options{...})`.
-    - The library handles: manifest fetching, layer downloading/uploading, blob deduplication (`TryReusingBlob`), multi-arch selection, digest verification, and retry logic.
-4. **Existence check**: HEAD request to the manifest endpoint (`/v2/{name}/manifests/{reference}`).
-5. **List versions**: GET `/v2/{name}/tags/list` (paginated).
+1. **Copy**: `crane.Copy(srcRef, dstRef, opts...)` handles manifest fetching, layer transfer, and auth.
+2. **Auth**: Per-registry authenticators via `authn.Keychain` — resolves source vs destination credentials by registry hostname.
+3. **Existence check**: `remote.Head()` against the manifest endpoint (`/v2/{name}/manifests/{reference}`).
+4. **List versions**: `crane.ListTags()` → GET `/v2/{name}/tags/list`.
 
 **Image name parsing** (same logic as the Python version):
 
@@ -763,9 +763,11 @@ go test -v -run TestSyncEngine ./...    # Specific test
 
 ```
 airgapper
-├── sync          Synchronize artifacts from source to destination
-├── version       Print version information
-└── help          Help about any command
+├── sync              Synchronize artifacts from source to destination
+├── helm
+│   └── images        Extract container image references from Helm charts
+├── version           Print version information
+└── help              Help about any command
 
 Global flags:
   --config, -c       Path to config file or folder (env: AIRGAPPER_CONFIG)
@@ -818,7 +820,7 @@ airgapper sync --config ./configs/ --credentials ./creds/
 
 ```dockerfile
 # Multi-stage build
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26.3-alpine AS builder
 WORKDIR /build
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w \
@@ -877,7 +879,7 @@ universal-airgapper-golang/
 │   │   ├── factory.go               # Transport factory + registry
 │   │   ├── factory_test.go
 │   │   ├── image/
-│   │   │   ├── transporter.go       # Image sync via containers/image v5
+│   │   │   ├── transporter.go       # Image sync via go-containerregistry
 │   │   │   ├── parse.go             # Image name parsing
 │   │   │   ├── transporter_test.go
 │   │   │   └── parse_test.go
@@ -899,13 +901,18 @@ universal-airgapper-golang/
 │   │   ├── result.go                # Result aggregation
 │   │   ├── engine_test.go
 │   │   └── result_test.go
+│   ├── helmimages/
+│   │   ├── extractor.go             # Chart rendering, image extraction, output YAML
+│   │   └── extractor_test.go
 │   ├── logging/
 │   │   └── logger.go                # slog setup
 │   └── cli/
 │       ├── root.go                  # Root command + global flags
 │       ├── sync.go                  # Sync subcommand
-│       ├── version.go               # Version subcommand
-│       └── sync_test.go
+│       ├── helm.go                  # Helm subcommand group
+│       ├── helm_images.go           # helm images subcommand
+│       ├── helm_images_test.go
+│       └── version.go               # Version subcommand
 ├── docker/
 │   └── Dockerfile                   # Multi-stage Go build → scratch
 ├── k8s/

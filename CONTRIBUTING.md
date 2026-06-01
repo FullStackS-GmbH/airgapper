@@ -20,7 +20,7 @@ Thank you for your interest in contributing to Universal Airgapper. This documen
 
 ### Prerequisites
 
-- **Go 1.23+** -- the minimum supported Go version
+- **Go 1.26.3+** -- the minimum supported Go version
 - **direnv** -- automatically loads environment from `.envrc` ([direnv.net](https://direnv.net/))
 - **Nix** (optional) -- provides a reproducible toolchain via `flake.nix` ([nixos.org](https://nixos.org/))
 - **Docker** -- for building and testing container images
@@ -47,7 +47,7 @@ If you use Nix + direnv, the toolchain is set up automatically:
 direnv allow
 ```
 
-Otherwise, ensure Go 1.23+ is installed and run:
+Otherwise, ensure Go 1.26.3+ is installed and run:
 
 ```shell
 go mod tidy
@@ -69,9 +69,11 @@ cmd/
     main.go                   # Thin entrypoint -- wires deps, calls root command
 
 internal/
-  cli/                        # Cobra command definitions (root, sync, version)
+  cli/                        # Cobra command definitions (root, sync, helm images, version)
     root.go                   # Root command, global persistent flags, viper binding
     sync.go                   # "sync" subcommand -- loads config, creates pipeline, runs engine
+    helm.go                   # "helm" subcommand group
+    helm_images.go            # "helm images" subcommand -- renders charts, extracts image refs
     version.go                # "version" subcommand -- prints build info
 
   config/                     # Configuration loading, validation, type definitions
@@ -93,7 +95,7 @@ internal/
 
   transport/                  # Transport factory and implementations
     factory.go                # Factory selecting transporter by resource type
-    image/                    # Container image sync (containers/image v5)
+    image/                    # Container image sync (go-containerregistry)
     helm/                     # Helm chart sync (Helm v4 SDK)
     git/                      # Git repo sync (go-git v5)
 

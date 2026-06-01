@@ -50,6 +50,7 @@ func NewRootCmd(version, commit, date string) *cobra.Command {
 	// Register subcommands.
 	cmd.AddCommand(newSyncCmd())
 	cmd.AddCommand(newVersionCmd(version, commit, date))
+	cmd.AddCommand(newHelmCmd())
 
 	return cmd
 }

@@ -22,12 +22,13 @@ internal/
   config/                     # Viper-based config loading, validation, merging
   credentials/                # Credential store: file-based loading and resolution
   transport/                  # Transporter interface + factory/registry
-    image/                    # Container image sync (containers/image v5)
+    image/                    # Container image sync (go-containerregistry)
     helm/                     # Helm chart sync (Helm v4 SDK)
     git/                      # Git repo sync (go-git/go-git v5)
   scanner/                    # Generic external command scanner
   sync/                       # Orchestration engine — coordinates transports + scanners
-  cli/                        # Cobra command definitions (root, sync, version)
+  helmimages/                 # Helm chart image extraction — renders charts, parses image refs, emits airgapper config
+  cli/                        # Cobra command definitions (root, sync, version, helm images)
   logging/                    # Structured logging setup (slog, JSON, OpenTelemetry semantics)
 ```
 
@@ -45,13 +46,13 @@ internal/
 | Config  | `github.com/spf13/viper`         | YAML config + env vars + flags        |
 | Git     | `github.com/go-git/go-git/v5`    | Pure-Go git operations                |
 | Helm    | `helm.sh/helm/v4/pkg/action`     | Official Helm v4 SDK                  |
-| Images  | `github.com/containers/image/v5` | Same engine as skopeo/podman          |
+| Images  | `github.com/google/go-containerregistry` | Pure-Go registry client (crane/ko engine) |
 | Logging | `log/slog` (stdlib)              | JSON handler, OpenTelemetry semantics |
 | Testing | `github.com/stretchr/testify`    | Assertions and require                |
 
 ## Setup, Build, and Run
 
-- Requires Go 1.23+. Build with `go build ./cmd/airgapper`.
+- Requires Go 1.26.3+. Build with `go build ./cmd/airgapper`.
 - Run locally with `go run ./cmd/airgapper -- --help`.
 - Use `go mod tidy` after adding or removing dependencies; commit both `go.mod` and `go.sum`.
 - For reproducible builds: `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" ./cmd/airgapper`.
@@ -78,7 +79,7 @@ internal/
 
 ## CLI Design (cobra + viper)
 
-- Subcommands are verbs: `airgapper sync`, `airgapper version`.
+- Subcommands are verbs: `airgapper sync`, `airgapper helm images`, `airgapper version`.
 - Global flags: `--config` (config file/folder), `--credentials` (credentials file/folder), `--debug`, `--dry-run`.
 - Every flag has a short description, sensible default, and env-var override (`AIRGAPPER_` prefix).
 - Exit codes: `0` success, `1` general error, `2` usage/config error.
@@ -107,7 +108,7 @@ internal/
 - All transports implement the same `Transporter` interface: `Sync(ctx, resource, creds) (*SyncResult, error)`.
 - Factory pattern selects the correct transporter based on resource type.
 - Each transport handles: existence checking, pulling, pushing, and push-mode logic (skip/force/overwrite).
-- Image transport uses `containers/image/v5` copy mechanism (same as skopeo).
+- Image transport uses `go-containerregistry` (crane) for pull, push, and tag listing.
 - Helm transport uses Helm v4 SDK for OCI and traditional repos.
 - Git transport uses `go-git/go-git/v5` for clone/push with HTTPS and SSH support.
 
