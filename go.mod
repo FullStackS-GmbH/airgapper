@@ -1,6 +1,6 @@
 module github.com/fullstacks-gmbh/airgapper
 
-go 1.25.0
+go 1.26.3
 
 require (
 	github.com/go-git/go-git/v5 v5.16.0
