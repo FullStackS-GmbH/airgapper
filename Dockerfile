@@ -17,7 +17,11 @@ COPY . .
 
 ARG TARGETOS
 ARG TARGETARCH
+# Build tags required by go.podman.io/image/v5 (containers/container-libs).
+# - containers_image_openpgp:        avoid gpgme CGO dep
+# - exclude_graphdriver_*:           skip storage backends (only docker:// transport is used)
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+    -tags=containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay \
     -trimpath \
     -ldflags="-s -w -X main.version=${APP_VERSION} -X main.commit=${APP_COMMIT_SHA}" \
     -o /airgapper \
