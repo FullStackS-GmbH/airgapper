@@ -87,7 +87,7 @@ func runHelmImages(cmd *cobra.Command, _ []string) error {
 	}
 
 	extractor := helmimages.New(logger)
-	entries, err := extractor.Extract(cmd.Context(), helmResources, credStore)
+	entries, skipped, err := extractor.Extract(cmd.Context(), helmResources, credStore)
 	if err != nil {
 		return fmt.Errorf("extract images: %w", err)
 	}
@@ -101,6 +101,25 @@ func runHelmImages(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("write output %q: %w", outputPath, err)
 	}
 
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Wrote %d image entries to %s\n", len(entries), outputPath)
+	out := cmd.OutOrStdout()
+	_, _ = fmt.Fprintf(out, "Wrote %d image entries to %s\n", len(entries), outputPath)
+
+	// Loudly surface incomplete extraction. A mirror built from a partial image
+	// set silently causes ImagePullBackOff in the air-gapped environment, so we
+	// list every skipped version and exit non-zero to fail CI.
+	if len(skipped) > 0 {
+		_, _ = fmt.Fprintf(out, "\nWARNING: %d chart version(s) skipped; their images are NOT in the output:\n", len(skipped))
+		for _, s := range skipped {
+			_, _ = fmt.Fprintf(out, "  - %s:%s (%s)\n", s.Chart, s.Version, s.Reason)
+		}
+	}
+
+	if len(entries) == 0 {
+		return fmt.Errorf("no images extracted from %d helm resource(s); generated config is empty", len(helmResources))
+	}
+	if len(skipped) > 0 {
+		return fmt.Errorf("%d chart version(s) skipped; extracted image set is incomplete", len(skipped))
+	}
+
 	return nil
 }

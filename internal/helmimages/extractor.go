@@ -33,6 +33,15 @@ type TagEntry struct {
 	Sources []string // e.g. ["bitnamicharts/nginx:18.3.5"]
 }
 
+// SkippedVersion records a chart version that could not be processed. A
+// non-empty slice of these means the extracted image set is incomplete, which
+// for an air-gapped mirror risks missing images at runtime.
+type SkippedVersion struct {
+	Chart   string
+	Version string
+	Reason  string
+}
+
 // Extractor pulls Helm charts, renders them, and extracts container image references.
 type Extractor struct {
 	transporter *helmtransport.Transporter
@@ -49,9 +58,12 @@ func New(logger *slog.Logger) *Extractor {
 
 // Extract processes all Helm resources, renders each chart version with default
 // values, and returns a deduplicated list of image entries in insertion order.
-// Render failures are logged as warnings and that version is skipped.
-func (e *Extractor) Extract(ctx context.Context, resources []domain.Resource, credStore domain.CredentialStore) ([]ImageEntry, error) {
+// Any chart version that cannot be pulled, loaded, or rendered is logged as a
+// warning, skipped, and reported in the returned SkippedVersion slice so callers
+// can surface incomplete extractions.
+func (e *Extractor) Extract(ctx context.Context, resources []domain.Resource, credStore domain.CredentialStore) ([]ImageEntry, []SkippedVersion, error) {
 	var imageOrder []string
+	var skipped []SkippedVersion
 	tagOrder := map[string][]string{}
 	sources := map[string]map[string][]string{}
 
@@ -82,12 +94,14 @@ func (e *Extractor) Extract(ctx context.Context, resources []domain.Resource, cr
 			data, err := e.transporter.PullChartBytes(ctx, res, version, credStore)
 			if err != nil {
 				e.logger.Warn("skipping chart version: pull failed", "chart", chartRef, "version", version, "error", err)
+				skipped = append(skipped, SkippedVersion{Chart: chartRef, Version: version, Reason: "pull failed: " + err.Error()})
 				continue
 			}
 
 			ch, err := helmloader.LoadArchive(bytes.NewReader(data))
 			if err != nil {
 				e.logger.Warn("skipping chart version: load failed", "chart", chartRef, "version", version, "error", err)
+				skipped = append(skipped, SkippedVersion{Chart: chartRef, Version: version, Reason: "load failed: " + err.Error()})
 				continue
 			}
 
@@ -97,12 +111,14 @@ func (e *Extractor) Extract(ctx context.Context, resources []domain.Resource, cr
 			}, nil)
 			if err != nil {
 				e.logger.Warn("skipping chart version: render values failed", "chart", chartRef, "version", version, "error", err)
+				skipped = append(skipped, SkippedVersion{Chart: chartRef, Version: version, Reason: "render values failed: " + err.Error()})
 				continue
 			}
 
 			rendered, err := engine.Render(ch, vals)
 			if err != nil {
 				e.logger.Warn("skipping chart version: render failed", "chart", chartRef, "version", version, "error", err)
+				skipped = append(skipped, SkippedVersion{Chart: chartRef, Version: version, Reason: "render failed: " + err.Error()})
 				continue
 			}
 
@@ -129,7 +145,7 @@ func (e *Extractor) Extract(ctx context.Context, resources []domain.Resource, cr
 		}
 		entries = append(entries, ImageEntry{Registry: reg, Repository: repo, Tags: tags})
 	}
-	return entries, nil
+	return entries, skipped, nil
 }
 
 // ParseImageRef parses an image reference string into registry, repository, and

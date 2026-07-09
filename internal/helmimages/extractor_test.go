@@ -1,12 +1,18 @@
 package helmimages_test
 
 import (
+	"context"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 	"github.com/fullstacks-gmbh/airgapper/internal/helmimages"
 )
 
@@ -33,6 +39,33 @@ func TestParseImageRef(t *testing.T) {
 			assert.Equal(t, tc.wantTag, tag)
 		})
 	}
+}
+
+func TestExtract_RecordsSkippedOnPullFailure(t *testing.T) {
+	t.Parallel()
+
+	// A legacy (non-OCI) repo whose index.yaml 404s: the chart pull fails, so
+	// the version must be reported as skipped rather than silently dropped.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.NotFound(w, nil)
+	}))
+	t.Cleanup(srv.Close)
+
+	res := domain.Resource{
+		Type:     domain.ResourceTypeHelm,
+		Source:   domain.Endpoint{Registry: srv.URL, Repository: "mychart"},
+		Versions: []string{"1.0.0"},
+	}
+
+	ex := helmimages.New(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	entries, skipped, err := ex.Extract(context.Background(), []domain.Resource{res}, nil)
+	require.NoError(t, err)
+
+	assert.Empty(t, entries)
+	require.Len(t, skipped, 1)
+	assert.Equal(t, "mychart", skipped[0].Chart)
+	assert.Equal(t, "1.0.0", skipped[0].Version)
+	assert.Contains(t, skipped[0].Reason, "pull failed")
 }
 
 func TestExtractImagesFromYAML_Deployment(t *testing.T) {

@@ -95,7 +95,7 @@ internal/
 
   transport/                  # Transport factory and implementations
     factory.go                # Factory selecting transporter by resource type
-    image/                    # Container image sync (go-containerregistry)
+    image/                    # Container image sync (containers/image v5)
     helm/                     # Helm chart sync (Helm v4 SDK)
     git/                      # Git repo sync (go-git v5)
 

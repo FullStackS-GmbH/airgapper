@@ -485,14 +485,16 @@ The git transporter reads that env var to obtain the `Authorization` header for 
 
 ### Image Transporter (`internal/transport/image/`)
 
-**Library**: `github.com/google/go-containerregistry` (same engine as crane and ko)
+**Library**: `go.podman.io/image/v5` (same engine family as skopeo and podman)
 
 **How it works**:
 
-1. **Copy**: `crane.Copy(srcRef, dstRef, opts...)` handles manifest fetching, layer transfer, and auth.
-2. **Auth**: Per-registry authenticators via `authn.Keychain` — resolves source vs destination credentials by registry hostname.
-3. **Existence check**: `remote.Head()` against the manifest endpoint (`/v2/{name}/manifests/{reference}`).
-4. **List versions**: `crane.ListTags()` → GET `/v2/{name}/tags/list`.
+1. **Parse references**: Convert source/destination strings to image references using the Docker transport.
+2. **Create SystemContext**: Set auth credentials, TLS settings, and transport options.
+3. **Copy**: Call `copy.Image(ctx, policyContext, destRef, srcRef, &copy.Options{...})`.
+    - The library handles manifest fetching, layer transfer, blob reuse, multi-arch copy, digest verification, auth challenges, and retries.
+4. **Existence check**: Resolve the destination digest for the requested tag.
+5. **List versions**: Read registry tags through the Docker transport.
 
 **Image name parsing** (same logic as the Python version):
 
@@ -879,7 +881,7 @@ universal-airgapper-golang/
 │   │   ├── factory.go               # Transport factory + registry
 │   │   ├── factory_test.go
 │   │   ├── image/
-│   │   │   ├── transporter.go       # Image sync via go-containerregistry
+│   │   │   ├── transporter.go       # Image sync via containers/image v5
 │   │   │   ├── parse.go             # Image name parsing
 │   │   │   ├── transporter_test.go
 │   │   │   └── parse_test.go

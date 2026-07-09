@@ -441,7 +441,7 @@ internal/
   domain/                     # Core types, interfaces, errors (zero deps)
   helmimages/                 # Helm chart rendering and image reference extraction
   transport/
-    image/                    # Container image sync (go-containerregistry)
+    image/                    # Container image sync (containers/image v5)
     helm/                     # Helm chart sync (Helm v4 SDK)
     git/                      # Git repo sync (go-git v5)
   scanner/                    # Generic external command scanner

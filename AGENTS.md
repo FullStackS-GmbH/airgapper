@@ -22,7 +22,7 @@ internal/
   config/                     # Viper-based config loading, validation, merging
   credentials/                # Credential store: file-based loading and resolution
   transport/                  # Transporter interface + factory/registry
-    image/                    # Container image sync (go-containerregistry)
+    image/                    # Container image sync (containers/image v5)
     helm/                     # Helm chart sync (Helm v4 SDK)
     git/                      # Git repo sync (go-git/go-git v5)
   scanner/                    # Generic external command scanner
@@ -46,7 +46,7 @@ internal/
 | Config  | `github.com/spf13/viper`         | YAML config + env vars + flags        |
 | Git     | `github.com/go-git/go-git/v5`    | Pure-Go git operations                |
 | Helm    | `helm.sh/helm/v4/pkg/action`     | Official Helm v4 SDK                  |
-| Images  | `github.com/google/go-containerregistry` | Pure-Go registry client (crane/ko engine) |
+| Images  | `go.podman.io/image/v5`        | Same engine family as skopeo/podman       |
 | Logging | `log/slog` (stdlib)              | JSON handler, OpenTelemetry semantics |
 | Testing | `github.com/stretchr/testify`    | Assertions and require                |
 
@@ -108,7 +108,7 @@ internal/
 - All transports implement the same `Transporter` interface: `Sync(ctx, resource, creds) (*SyncResult, error)`.
 - Factory pattern selects the correct transporter based on resource type.
 - Each transport handles: existence checking, pulling, pushing, and push-mode logic (skip/force/overwrite).
-- Image transport uses `go-containerregistry` (crane) for pull, push, and tag listing.
+- Image transport uses `go.podman.io/image/v5` copy mechanics for pull, push, and tag listing.
 - Helm transport uses Helm v4 SDK for OCI and traditional repos.
 - Git transport uses `go-git/go-git/v5` for clone/push with HTTPS and SSH support.
 
