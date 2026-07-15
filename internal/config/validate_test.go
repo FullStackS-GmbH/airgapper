@@ -133,6 +133,25 @@ func TestValidate_HelmMissingVersions(t *testing.T) {
 	assert.Contains(t, err.Error(), "at least one version is required")
 }
 
+func TestValidate_HelmDestinationChartRejectsRepositoryPath(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{Resources: []config.ResourceConfig{{
+		Type:                "helm",
+		SourceRegistry:      "registry.suse.com",
+		SourceChart:         "private-registry/1.2/private-registry-helm",
+		DestinationRegistry: "registry.internal",
+		DestinationRepo:     "platform-charts",
+		DestinationChart:    "nested/suse-private-registry",
+		Versions:            []string{"1.2.1"},
+	}}}
+
+	err := config.Validate(cfg)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, domain.ErrInvalidConfig))
+	assert.Contains(t, err.Error(), "destination_chart must be a chart name")
+}
+
 func TestValidate_GitMissingFields(t *testing.T) {
 	t.Parallel()
 

@@ -35,15 +35,14 @@ func (t *Transporter) Type() domain.ResourceType {
 // in the resource. It respects the PushMode and DryRun settings.
 func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts domain.SyncOptions) (*domain.SyncResult, error) {
 	effectiveResource := resource
-	effectiveResource.Destination.Repository = destinationChartRepository(resource.Destination.Repository, resource.Source.Repository)
-	result := &domain.SyncResult{Resource: effectiveResource}
+	result := &domain.SyncResult{}
 	logger := opts.Logger
 	if logger == nil {
 		logger = t.logger
 	}
 
-	for _, version := range resource.Versions {
-		vr, ops := t.syncVersion(ctx, resource, version, opts, logger)
+	for _, version := range effectiveResource.Versions {
+		vr, ops := t.syncVersion(ctx, &effectiveResource, version, opts, logger)
 		result.Operations = append(result.Operations, ops...)
 		switch vr.Status {
 		case domain.SyncStatusSynced:
@@ -54,19 +53,20 @@ func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts d
 			result.Failed = append(result.Failed, vr)
 		}
 	}
+	result.Resource = effectiveResource
 
 	return result, nil
 }
 
 // syncVersion handles the sync logic for a single chart version.
-func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource, version string, opts domain.SyncOptions, logger *slog.Logger) (domain.VersionResult, []domain.OperationRecord) {
+func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource, version string, opts domain.SyncOptions, logger *slog.Logger) (domain.VersionResult, []domain.OperationRecord) {
 	destination := resource.Destination
-	destination.Repository = destinationChartRepository(resource.Destination.Repository, resource.Source.Repository)
+	destination.Repository = destinationChartRepository(resource.Destination.Repository, resource.Source.Repository, resource.DestinationChart)
 
 	srcRef := chartRef(resource.Source, version)
 	dstRef := NormalizeOCIRef(destination.Registry, destination.Repository, version)
 
-	logger = logger.With("version", version, "src", srcRef, "dst", dstRef)
+	logger = logger.With("version", version, "src", srcRef)
 
 	op := func(operation domain.OperationType, msg string) domain.OperationRecord {
 		return domain.OperationRecord{
@@ -92,53 +92,25 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 			[]domain.OperationRecord{op(domain.OpFail, "resolve target credentials: "+err.Error())}
 	}
 
-	// Check if the chart already exists at the destination.
-	exists, err := t.Exists(ctx, destination, version, dstCred)
-	if err != nil {
-		logger.Warn("failed to check existence at destination", "error", err)
-	}
-
-	// Dry-run mode: report what would happen without mutating.
-	if opts.DryRun {
-		return t.dryRunResult(resource, version, exists, logger, op)
-	}
-
-	if exists && resource.PushMode == domain.PushModeSkip {
-		logger.Info("chart already exists at destination, skipping")
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "already exists"},
-			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
-	}
-
-	// Create a Helm registry client for OCI pull/push operations.
-	client, err := newRegistryClient(resource.Source.Registry, resource.Destination.Registry)
-	if err != nil {
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create registry client: %w", err)},
-			[]domain.OperationRecord{op(domain.OpFail, "create registry client: "+err.Error())}
-	}
-
-	// Login to source registry.
-	if srcCred != nil && IsOCIRegistry(resource.Source.Registry) {
-		srcHost := extractHost(resource.Source.Registry)
-		if loginErr := client.Login(srcHost, registry.LoginOptBasicAuth(srcCred.Username, srcCred.Password)); loginErr != nil {
-			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to source %q: %w", srcHost, loginErr)},
-				[]domain.OperationRecord{op(domain.OpFail, "login to source: "+loginErr.Error())}
-		}
-	}
-
-	// Login to destination registry.
-	if dstCred != nil {
-		dstHost := extractHost(resource.Destination.Registry)
-		if loginErr := client.Login(dstHost, registry.LoginOptBasicAuth(dstCred.Username, dstCred.Password)); loginErr != nil {
-			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to destination %q: %w", dstHost, loginErr)},
-				[]domain.OperationRecord{op(domain.OpFail, "login to destination: "+loginErr.Error())}
-		}
-	}
-
 	// Pull chart from source.
 	logger.Info("pulling chart from source")
 	var chartData []byte
 	if IsOCIRegistry(resource.Source.Registry) {
-		pullResult, err := client.Pull(srcRef)
+		// Source and destination use separate clients because Helm's Login
+		// installs a host-scoped credential callback on the client.
+		sourceClient, err := newRegistryClient(resource.Source.Registry, "")
+		if err != nil {
+			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create source registry client: %w", err)},
+				[]domain.OperationRecord{op(domain.OpFail, "create source registry client: "+err.Error())}
+		}
+		if srcCred != nil {
+			srcHost := extractHost(resource.Source.Registry)
+			if loginErr := sourceClient.Login(srcHost, registry.LoginOptBasicAuth(srcCred.Username, srcCred.Password)); loginErr != nil {
+				return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to source %q: %w", srcHost, loginErr)},
+					[]domain.OperationRecord{op(domain.OpFail, "login to source: "+loginErr.Error())}
+			}
+		}
+		pullResult, err := sourceClient.Pull(srcRef)
 		if err != nil {
 			logger.Error("failed to pull chart", "error", err)
 			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("pull chart: %w", err)},
@@ -155,13 +127,60 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 		}
 	}
 
+	chartData, targetChart, err := prepareChartArchive(chartData, resource.DestinationChart)
+	if err != nil {
+		logger.Error("failed to prepare chart", "error", err)
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("prepare chart: %w", err)},
+			[]domain.OperationRecord{op(domain.OpPull, "pulled from source"), op(domain.OpFail, "prepare chart: "+err.Error())}
+	}
+
+	destination.Repository = destinationChartRepository(resource.Destination.Repository, resource.Source.Repository, targetChart)
+	resource.Destination.Repository = destination.Repository
+	dstRef = NormalizeOCIRef(destination.Registry, destination.Repository, version)
+	logger = logger.With("dst", dstRef, "chart_name", targetChart)
+
+	// Helm destinations are OCI registries. Force OCI handling for private
+	// registry hostnames that are not part of the source auto-detection list.
+	destinationForExistence := destination
+	if !IsOCIRegistry(destinationForExistence.Registry) {
+		destinationForExistence.Registry = "oci://" + destinationForExistence.Registry
+	}
+	exists, err := t.Exists(ctx, destinationForExistence, version, dstCred)
+	if err != nil {
+		logger.Warn("failed to check existence at destination", "error", err)
+	}
+
+	// Dry-run mode: report what would happen without mutating.
+	if opts.DryRun {
+		return t.dryRunResult(*resource, version, exists, logger, op)
+	}
+
+	if exists && resource.PushMode == domain.PushModeSkip {
+		logger.Info("chart already exists at destination, skipping")
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "already exists"},
+			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
+	}
+
+	destinationClient, err := newRegistryClient("", resource.Destination.Registry)
+	if err != nil {
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create destination registry client: %w", err)},
+			[]domain.OperationRecord{op(domain.OpFail, "create destination registry client: "+err.Error())}
+	}
+	if dstCred != nil {
+		dstHost := extractHost(resource.Destination.Registry)
+		if loginErr := destinationClient.Login(dstHost, registry.LoginOptBasicAuth(dstCred.Username, dstCred.Password)); loginErr != nil {
+			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to destination %q: %w", dstHost, loginErr)},
+				[]domain.OperationRecord{op(domain.OpFail, "login to destination: "+loginErr.Error())}
+		}
+	}
+
 	// Helm v4 strict mode expects the push target to end in
 	// "/{chart-name}:{chart-version}".
 	dstPushRef := dstRef
 
 	// Push chart to destination.
 	logger.Info("pushing chart to destination")
-	_, err = client.Push(chartData, dstPushRef)
+	_, err = destinationClient.Push(chartData, dstPushRef)
 	if err != nil {
 		logger.Error("failed to push chart", "error", err)
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push chart: %w", err)},
@@ -305,9 +324,12 @@ func chartRef(endpoint domain.Endpoint, version string) string {
 	return fmt.Sprintf("%s/%s:%s", base, endpoint.Repository, version)
 }
 
-func destinationChartRepository(destinationRepo, sourceChart string) string {
+func destinationChartRepository(destinationRepo, sourceChart, destinationChart string) string {
 	repo := strings.Trim(destinationRepo, "/")
-	name := chartName(sourceChart)
+	name := strings.Trim(destinationChart, "/")
+	if name == "" {
+		name = chartName(sourceChart)
+	}
 	if name == "" {
 		return repo
 	}

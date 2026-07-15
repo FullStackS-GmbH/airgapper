@@ -74,6 +74,10 @@ type ResourceConfig struct {
 	// share the "destination_repo" key.
 	DestinationRepo string `mapstructure:"destination_repo" yaml:"destination_repo,omitempty"`
 
+	// DestinationChart optionally overrides the chart name at the destination.
+	// For Helm resources, the chart archive metadata is updated to match.
+	DestinationChart string `mapstructure:"destination_chart" yaml:"destination_chart,omitempty"`
+
 	// Versions lists the chart versions to synchronize (helm resources only).
 	Versions []string `mapstructure:"versions" yaml:"versions,omitempty"`
 
@@ -138,6 +142,7 @@ func (rc *ResourceConfig) ToResource() domain.Resource {
 
 	case "helm":
 		r.Type = domain.ResourceTypeHelm
+		r.DestinationChart = strings.Trim(strings.TrimSpace(rc.DestinationChart), "/")
 		r.Source = domain.Endpoint{
 			Registry:   strings.TrimRight(strings.TrimSpace(rc.SourceRegistry), "/"),
 			Repository: strings.Trim(strings.TrimSpace(rc.SourceChart), "/"),
