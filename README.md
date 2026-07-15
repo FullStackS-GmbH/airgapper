@@ -110,11 +110,16 @@ resources:
     source_chart: bitnamicharts/postgresql
     destination_registry: internal-registry.corp
     destination_repo: charts
+    # destination_chart: postgresql # optional target name override
     push_mode: skip            # skip | overwrite (default: skip)
     versions:
       - "16.0.0"
       - "16\\..*"             # regex: all 16.x versions
 ```
+
+The destination OCI artifact name is automatically derived from `Chart.yaml`,
+which also handles vendor artifacts whose repository name differs from the real
+chart name. Set `destination_chart` only for an explicit name override.
 
 ### Git Resources
 

@@ -18,6 +18,7 @@ func TestResourceConfigToResource_NormalizesHelmEndpointSlashes(t *testing.T) {
 		SourceChart:         "/neuvector-crd/",
 		DestinationRegistry: "localhost:5050/",
 		DestinationRepo:     "/platform-charts/",
+		DestinationChart:    "/suse-private-registry/",
 		Versions:            []string{"108.0.1+up2.8.10"},
 	}
 
@@ -25,4 +26,5 @@ func TestResourceConfigToResource_NormalizesHelmEndpointSlashes(t *testing.T) {
 
 	assert.Equal(t, domain.Endpoint{Registry: "charts.rancher.io", Repository: "neuvector-crd"}, got.Source)
 	assert.Equal(t, domain.Endpoint{Registry: "localhost:5050", Repository: "platform-charts"}, got.Destination)
+	assert.Equal(t, "suse-private-registry", got.DestinationChart)
 }

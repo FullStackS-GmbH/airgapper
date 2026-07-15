@@ -93,6 +93,7 @@ Sync Helm charts between OCI registries and legacy HTTP chart repositories.
 | `source_chart`           | yes      | Chart name within source registry (e.g., `bitnamicharts/mariadb`) |
 | `destination_registry`   | yes      | Destination registry hostname                                     |
 | `destination_repo`       | yes      | Repository path in destination registry                           |
+| `destination_chart`      | no       | Override the destination chart name and chart metadata            |
 | `versions`               | yes      | List of chart versions to sync (supports regex patterns)          |
 | `push_mode`              | no       | `skip` (default) or `overwrite`                                   |
 | `source_credentials_ref` | no       | Name of a credential entry for the source                         |
@@ -105,11 +106,31 @@ resources:
     source_chart: bitnamicharts/postgresql
     destination_registry: internal-registry.corp
     destination_repo: charts
+    # destination_chart: postgresql
     push_mode: skip
     versions:
       - "16.0.0"
       - "16\\..*"         # Regex: matches all 16.x versions
 ```
+
+The destination OCI artifact name is taken from the pulled chart's `Chart.yaml`,
+so vendor artifacts whose repository basename differs from the real chart name
+are corrected automatically:
+
+```yaml
+resources:
+  - type: helm
+    source_registry: registry.suse.com
+    source_chart: private-registry/1.2/private-registry-helm
+    destination_registry: internal-registry.corp
+    destination_repo: platform-charts
+    versions:
+      - "1.2.1"
+```
+
+Set `destination_chart` only to explicitly override the name from `Chart.yaml`.
+The override changes the OCI artifact basename, chart metadata, and archive
+directory together.
 
 ### Git (`type: git`)
 

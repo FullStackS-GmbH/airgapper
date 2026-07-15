@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	helmloader "helm.sh/helm/v4/pkg/chart/v2/loader"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
@@ -123,12 +124,64 @@ func TestDestinationChartRepository(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.want, destinationChartRepository(tt.destinationRepo, tt.sourceChart))
+			assert.Equal(t, tt.want, destinationChartRepository(tt.destinationRepo, tt.sourceChart, ""))
 		})
 	}
 }
 
+func TestDestinationChartRepositoryOverride(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "platform-charts/suse-private-registry", destinationChartRepository(
+		"platform-charts",
+		"private-registry/1.2/private-registry-helm",
+		"suse-private-registry",
+	))
+}
+
+func TestRenameChartArchive(t *testing.T) {
+	t.Parallel()
+
+	archive := testChartArchive(t, "private-registry-helm", "1.2.1")
+	renamed, name, err := prepareChartArchive(archive, "suse-private-registry")
+	require.NoError(t, err)
+	assert.Equal(t, "suse-private-registry", name)
+
+	chart, err := helmloader.LoadArchive(bytes.NewReader(renamed))
+	require.NoError(t, err)
+	assert.Equal(t, "suse-private-registry", chart.Metadata.Name)
+	assert.Equal(t, "1.2.1", chart.Metadata.Version)
+
+	gzipReader, err := gzip.NewReader(bytes.NewReader(renamed))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, gzipReader.Close()) })
+	header, err := tar.NewReader(gzipReader).Next()
+	require.NoError(t, err)
+	assert.Equal(t, "suse-private-registry/Chart.yaml", header.Name)
+}
+
+func TestPrepareChartArchiveUsesMetadataNameByDefault(t *testing.T) {
+	t.Parallel()
+
+	archive := testChartArchiveWithRoot(t, "private-registry-helm", "suse-private-registry", "1.2.1")
+	prepared, name, err := prepareChartArchive(archive, "")
+	require.NoError(t, err)
+	assert.Equal(t, "suse-private-registry", name)
+
+	gzipReader, err := gzip.NewReader(bytes.NewReader(prepared))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, gzipReader.Close()) })
+	header, err := tar.NewReader(gzipReader).Next()
+	require.NoError(t, err)
+	assert.Equal(t, "suse-private-registry/Chart.yaml", header.Name)
+}
+
 func testChartArchive(t *testing.T, name, version string) []byte {
+	t.Helper()
+	return testChartArchiveWithRoot(t, name, name, version)
+}
+
+func testChartArchiveWithRoot(t *testing.T, root, name, version string) []byte {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -137,7 +190,7 @@ func testChartArchive(t *testing.T, name, version string) []byte {
 
 	chartYAML := fmt.Sprintf("apiVersion: v2\nname: %s\nversion: %s\n", name, version)
 	err := tarWriter.WriteHeader(&tar.Header{
-		Name: fmt.Sprintf("%s/Chart.yaml", name),
+		Name: fmt.Sprintf("%s/Chart.yaml", root),
 		Mode: 0o644,
 		Size: int64(len(chartYAML)),
 	})

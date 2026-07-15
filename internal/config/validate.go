@@ -89,6 +89,9 @@ func validateResource(index int, rc *ResourceConfig) error {
 		if len(rc.Versions) == 0 {
 			return fmt.Errorf("%s: at least one version is required for helm resources: %w", prefix, domain.ErrInvalidConfig)
 		}
+		if name := strings.TrimSpace(rc.DestinationChart); name != "" && strings.Contains(strings.Trim(name, "/"), "/") {
+			return fmt.Errorf("%s: destination_chart must be a chart name, not a repository path: %w", prefix, domain.ErrInvalidConfig)
+		}
 
 	case "git":
 		if err := requireNonEmpty(prefix, map[string]string{

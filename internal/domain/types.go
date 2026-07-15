@@ -14,6 +14,11 @@ type Resource struct {
 	// Destination is the target endpoint to which the artifact is pushed.
 	Destination Endpoint
 
+	// DestinationChart optionally overrides the chart name used at the
+	// destination for Helm resources. When empty, the source chart name is
+	// preserved.
+	DestinationChart string
+
 	// Versions lists the tags, chart versions, or git refs to sync.
 	// Entries may be literal values or regex patterns.
 	Versions []string
