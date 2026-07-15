@@ -47,12 +47,13 @@ It executes a parameterized shell command, checks the exit code, and captures ou
 **Context**: The Python version implements raw HTTP calls to the Docker Registry v2 API for pulling and pushing images.
 This is fragile, hard to maintain, and misses edge cases.
 
-**Decision**: Use `github.com/containers/image/v5` - the same library powering skopeo, podman, and buildah - for all container image operations.
+**Decision**: Use `go.podman.io/image/v5` - the same engine family powering skopeo, podman, and buildah - for all container image operations.
 
 **Consequences**:
 
 - Battle-tested image copy logic handling manifests, multi-arch, layer deduplication, auth challenges, and retries.
 - Dramatically less code to maintain compared to a hand-rolled HTTP client.
+- Build tags keep the binary CGO-free for the registry operations used by airgapper.
 - Slight increase in binary size due to the library's scope.
 
 ### ADR-5: Constructor-Based Dependency Injection

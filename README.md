@@ -18,6 +18,7 @@ Universal Airgapper reads a YAML configuration file listing artifacts (container
 - Sync **container images** between any Docker v2-compatible registries (Docker Hub, GHCR, Harbor, Nexus, private registries)
 - Sync **Helm charts** between OCI registries and legacy HTTP chart repositories
 - Sync **Git repositories** between any hosting services (GitHub, GitLab, Bitbucket, Azure Repos, self-hosted) via HTTPS or SSH
+- **Helm image extraction** -- render Helm charts and extract all container image references, generating a ready-to-use image sync config for air-gapped registry migration
 - **Regex patterns** for tags, chart versions, and git refs -- sync all matching versions automatically
 - **Generic command scanner** -- run any external security/compliance tool before promoting an artifact
 - **Push modes**: `skip` (default), `force`, `overwrite` -- control what happens when an artifact already exists at the destination
@@ -35,7 +36,7 @@ Universal Airgapper reads a YAML configuration file listing artifacts (container
 Download the latest binary from [GitHub Releases](https://github.com/fullstacks-gmbh/airgapper/releases), or build from source:
 
 ```shell
-# Build from source (requires Go 1.26+)
+# Build from source (requires Go 1.26.3+)
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o airgapper ./cmd/airgapper
 ```
 
@@ -253,8 +254,9 @@ git:
 ### Commands
 
 ```
-airgapper sync       Synchronize artifacts from source to destination
-airgapper version    Print version, commit, and build date
+airgapper sync            Synchronize artifacts from source to destination
+airgapper helm images     Extract container image references from Helm charts
+airgapper version         Print version, commit, and build date
 ```
 
 ### Global Flags
@@ -265,6 +267,23 @@ airgapper version    Print version, commit, and build date
 | `--credentials` |       | `AIRGAPPER_CREDENTIALS` | (none)  | Path to credentials file or folder       |
 | `--debug`       | `-d`  | `AIRGAPPER_DEBUG`       | `false` | Enable debug logging (JSON, DEBUG level) |
 | `--dry-run`     |       | `AIRGAPPER_DRY_RUN`     | `false` | Disable all write/push operations        |
+
+### `helm images` Flags
+
+| Flag                      | Env Var                                        | Required | Description                                                                 |
+|---------------------------|------------------------------------------------|----------|-----------------------------------------------------------------------------|
+| `--output`, `-o`          | `AIRGAPPER_HELM_IMAGES_OUTPUT`                 | yes      | Path to write the generated image config YAML                               |
+| `--target-credentials-ref`| `AIRGAPPER_HELM_IMAGES_TARGET_CREDENTIALS_REF` | yes      | Name of a helm credential entry whose `name` field is the destination registry hostname |
+
+The command reads all `helm` resources from the config, pulls and renders each chart version with its default values, extracts every `image:` reference from the rendered manifests, and writes a ready-to-use airgapper image config YAML to `--output`. The output file can be fed directly to `airgapper sync` to mirror those images into an air-gapped registry.
+
+```shell
+airgapper helm images \
+  --config ./configs/ \
+  --credentials ./creds/ \
+  --output ./image-sync.config.airgapper.yaml \
+  --target-credentials-ref my-internal-registry
+```
 
 ### Exit Codes
 
@@ -416,10 +435,11 @@ Universal Airgapper follows **Hexagonal Architecture (Ports & Adapters)** with t
 ```
 cmd/airgapper/main.go        # Thin entrypoint
 internal/
-  cli/                        # Cobra commands (root, sync, version)
+  cli/                        # Cobra commands (root, sync, helm images, version)
   config/                     # YAML config loading, validation, merging
   credentials/                # File-based credential store
   domain/                     # Core types, interfaces, errors (zero deps)
+  helmimages/                 # Helm chart rendering and image reference extraction
   transport/
     image/                    # Container image sync (containers/image v5)
     helm/                     # Helm chart sync (Helm v4 SDK)
@@ -435,7 +455,7 @@ For the full C4 architecture model and detailed design, see [docs/architecture/]
 
 ### Prerequisites
 
-- Go 1.26+
+- Go 1.26.3+
 - [direnv](https://direnv.net/) (optional, for automatic env setup)
 - [Nix](https://nixos.org/) (optional, provides reproducible toolchain via `flake.nix`)
 - Docker (for container builds)

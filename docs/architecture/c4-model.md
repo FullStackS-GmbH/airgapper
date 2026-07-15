@@ -148,9 +148,12 @@ The Component diagram shows the internal building blocks of the Go binary, organ
 │  ║  ┌─────────────────────────────────────────────────────────────────┐  ║  │
 │  ║  │                    CLI Layer (cobra)                            │  ║  │
 │  ║  │                                                                 │  ║  │
-│  ║  │  internal/cli/root.go      — Root command, global flags         │  ║  │
-│  ║  │  internal/cli/sync.go      — "sync" subcommand                  │  ║  │
-│  ║  │  internal/cli/version.go   — "version" subcommand               │  ║  │
+│  ║  │  internal/cli/root.go           — Root command, global flags    │  ║  │
+│  ║  │  internal/cli/sync.go           — "sync" subcommand             │  ║  │
+│  ║  │  internal/cli/helm.go           — "helm" subcommand group       │  ║  │
+│  ║  │  internal/cli/helm_images.go    — "helm images" subcommand      │  ║  │
+│  ║  │  internal/cli/version.go        — "version" subcommand          │  ║  │
+│  ║  │  internal/helmimages/           — Chart rendering + extraction  │  ║  │
 │  ║  │                                                                 │  ║  │
 │  ║  │  Responsibilities:                                              │  ║  │
 │  ║  │  • Parse CLI arguments and bind to viper                        │  ║  │
@@ -218,8 +221,8 @@ The Component diagram shows the internal building blocks of the Go binary, organ
 │  ║  │           image/        │  │                                 │     ║  │
 │  ║  │                         │  │  • Load YAML credential files   │     ║  │
 │  ║  │  • containers/image v5  │  │  • Resolve by host/name ref     │     ║  │
-│  ║  │  • Pull via ImageSource │  │  • Support image/helm/git types │     ║  │
-│  ║  │  • Push via ImageDest   │  │  • SSH key path resolution      │     ║  │
+│  ║  │  • copy.Image()         │  │  • Support image/helm/git types │     ║  │
+│  ║  │  • Registry tag listing │  │  • SSH key path resolution      │     ║  │
 │  ║  │  • Multi-arch support   │  │  • Azure Repos workaround       │     ║  │
 │  ║  │  • Manifest handling    │  │  • Never expose secrets in logs │     ║  │
 │  ║  │  • Layer deduplication  │  │                                 │     ║  │
@@ -258,11 +261,11 @@ The Component diagram shows the internal building blocks of the Go binary, organ
 
 | Component             | Package                     | Responsibility                                                                                                                                                           |
 |-----------------------|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **CLI Layer**         | `internal/cli/`             | Parse arguments, wire dependencies, invoke engine, map results to exit codes.                                                                                            |
+| **CLI Layer**         | `internal/cli/`, `internal/helmimages/` | Parse arguments, wire dependencies, invoke engine, map results to exit codes. `helm images` renders Helm charts and extracts image references via `helmimages/`. |
 | **Config Loader**     | `internal/config/`          | Discover, merge, validate YAML config files. Unmarshal into typed structs.                                                                                               |
 | **Domain Core**       | `internal/domain/`          | Define shared types (`Resource`, `Credential`, `SyncResult`), interfaces (`Transporter`, `Scanner`, `CredentialStore`), and sentinel errors. Zero external dependencies. |
 | **Sync Engine**       | `internal/sync/`            | Orchestrate the sync workflow: iterate resources, select transporter, run scanner, execute sync, aggregate results.                                                      |
-| **Image Transporter** | `internal/transport/image/` | Copy container images using `containers/image/v5`. Handle manifests, layers, multi-arch, auth tokens.                                                                    |
+| **Image Transporter** | `internal/transport/image/` | Copy container images using `go.podman.io/image/v5`. Handle manifests, layers, multi-arch, auth tokens, existence checks, and tag listing.                               |
 | **Helm Transporter**  | `internal/transport/helm/`  | Copy Helm charts using the Helm v4 SDK. Handle OCI and legacy HTTP registries.                                                                                           |
 | **Git Transporter**   | `internal/transport/git/`   | Clone and push git repos using `go-git/go-git/v5`. Handle HTTPS/SSH auth, regex ref matching.                                                                            |
 | **Credential Store**  | `internal/credentials/`     | Load credential YAML files, resolve credentials by host/name reference, support multiple credential types.                                                               |
