@@ -68,7 +68,7 @@ func runHelmImages(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Validate target credentials ref and resolve registry hostname early.
-	targetCred, err := credStore.ResolveByRef(targetCredRef)
+	targetCred, err := credStore.ResolveByRef(targetCredRef, domain.CredentialTypeHelm)
 	if err != nil {
 		return fmt.Errorf("resolve target credentials ref %q: %w", targetCredRef, err)
 	}

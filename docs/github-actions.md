@@ -25,6 +25,7 @@ jobs:
       config-folder: ${{ github.workspace }}/configs
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
+      AIRGAPPER_CREDENTIALS: ${{ secrets.UNIVERSAL_AIRGAPPER_CREDS }}
 ```
 
 ## Inputs
@@ -38,24 +39,25 @@ All inputs are optional and have sensible defaults.
 | `image_name`              | string | `fullstacks-gmbh/airgapper`           | Image name (without registry or tag)                      |
 | `image_tag`               | string | `latest`                              | Image tag to use                                          |
 | `image_pull_policy`       | string | `always`                              | Image pull policy (`always`, `if-not-present`, `never`)   |
-| `config-folder`           | string | (workspace)                           | Path to folder containing `*.airgapper.yaml` config files |
+| `config-folder`           | string | (workspace)                           | Path to folder containing `*.config.airgapper.yaml` files |
 | `debug`                   | string | `""`                                  | Set to `--debug` to enable debug logging                  |
-| `credentials-secret-name` | string | `UNIVERSAL_AIRGAPPER_CREDS`           | Name of the GitHub secret containing credential YAML      |
+| `credentials-secret-name` | string | `UNIVERSAL_AIRGAPPER_CREDS`           | Legacy secret lookup when `AIRGAPPER_CREDENTIALS` is not mapped |
 
 ## Secrets
 
-| Secret     | Required | Description                                                                                            |
-|------------|----------|--------------------------------------------------------------------------------------------------------|
-| `GHCR_PAT` | yes      | Personal access token with `read:packages` scope, used to pull the airgapper container image from GHCR |
+| Secret                  | Required | Description                                                                                            |
+|-------------------------|----------|--------------------------------------------------------------------------------------------------------|
+| `GHCR_PAT`              | yes      | Personal access token with `read:packages` scope, used to pull the airgapper container image from GHCR |
+| `AIRGAPPER_CREDENTIALS` | no       | Full airgapper credential YAML; preferred over dynamic secret lookup                                  |
 
-The credential YAML content is read from the secret specified by `credentials-secret-name` (default: `UNIVERSAL_AIRGAPPER_CREDS`). Store your full credential YAML as the value of that secret.
+Map the repository secret containing the credential YAML to the reusable workflow's `AIRGAPPER_CREDENTIALS` secret, as shown in the examples.
 
 ## How It Works
 
 1. The job runs on `ubuntu-latest` inside the airgapper container image.
 2. It checks out your repository (so config files in the repo are available).
-3. It prints the config files for visibility (debug aid).
-4. It writes the credential secret to a temporary file (`credentials.yaml`).
+3. It validates and lists the matching config files without printing their contents.
+4. It writes the credential secret to a permission-restricted temporary file.
 5. It runs `/airgapper sync` with the provided config folder and credentials file.
 
 ## Examples
@@ -68,9 +70,10 @@ jobs:
     uses: fullstacks-gmbh/universal-airgapper/.github/workflows/universal-airgapper.yml@main
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
+      AIRGAPPER_CREDENTIALS: ${{ secrets.UNIVERSAL_AIRGAPPER_CREDS }}
 ```
 
-Config files are expected at the repository root (`*.airgapper.yaml`). Credentials are read from the `UNIVERSAL_AIRGAPPER_CREDS` secret.
+Config files are expected at the repository root (`*.config.airgapper.yaml`). Credentials are read from the `UNIVERSAL_AIRGAPPER_CREDS` secret.
 
 ### With Custom Config Folder and Debug
 
@@ -83,6 +86,7 @@ jobs:
       debug: "--debug"
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
+      AIRGAPPER_CREDENTIALS: ${{ secrets.UNIVERSAL_AIRGAPPER_CREDS }}
 ```
 
 ### With Custom Image Tag
@@ -97,9 +101,10 @@ jobs:
       image_tag: "1.0.0"
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
+      AIRGAPPER_CREDENTIALS: ${{ secrets.UNIVERSAL_AIRGAPPER_CREDS }}
 ```
 
-### With Custom Credentials Secret Name
+### With a Different Credentials Secret
 
 If your credential YAML is stored in a differently named secret:
 
@@ -107,10 +112,9 @@ If your credential YAML is stored in a differently named secret:
 jobs:
   sync:
     uses: fullstacks-gmbh/universal-airgapper/.github/workflows/universal-airgapper.yml@main
-    with:
-      credentials-secret-name: MY_AIRGAPPER_CREDS
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
+      AIRGAPPER_CREDENTIALS: ${{ secrets.MY_AIRGAPPER_CREDS }}
 ```
 
 ## Setting Up Secrets

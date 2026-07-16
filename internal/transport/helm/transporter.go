@@ -366,7 +366,7 @@ func resolveCredentials(credRef string, endpoint domain.Endpoint, credType domai
 	}
 
 	if credRef != "" {
-		cred, err := store.ResolveByRef(credRef)
+		cred, err := store.ResolveByRef(credRef, credType)
 		if err != nil {
 			return nil, fmt.Errorf("resolve credential ref %q: %w", credRef, err)
 		}
