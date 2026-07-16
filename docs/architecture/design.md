@@ -247,16 +247,16 @@ type CredentialStore interface {
     // Returns nil (not an error) if no credentials are found.
     Resolve(host string, credType CredentialType) (*Credential, error)
 
-    // ResolveByRef finds credentials by their reference name.
-    // Returns ErrNotFound if the reference does not exist.
-    ResolveByRef(ref string) (*Credential, error)
+    // ResolveByRef finds credentials by their reference name and type.
+    // Returns ErrNotFound if the reference does not exist for that type.
+    ResolveByRef(ref string, credType CredentialType) (*Credential, error)
 }
 ```
 
 **Contract rules**:
 
 - `Resolve` returns `nil, nil` when no matching credential exists (anonymous access).
-- `ResolveByRef` returns `domain.ErrNotFound` when the reference does not exist.
+- `ResolveByRef` returns `domain.ErrNotFound` when the reference does not exist for the requested type.
 - Credentials must never be logged. The store must not expose secrets in error messages.
 
 ---

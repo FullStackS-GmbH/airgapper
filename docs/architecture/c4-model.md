@@ -324,8 +324,8 @@ type CredentialStore interface {
     // Resolve finds credentials matching the given host and credential type.
     Resolve(host string, credType CredentialType) (*Credential, error)
 
-    // ResolveByRef finds credentials by their reference name.
-    ResolveByRef(ref string) (*Credential, error)
+    // ResolveByRef finds credentials by their reference name and type.
+    ResolveByRef(ref string, credType CredentialType) (*Credential, error)
 }
 ```
 

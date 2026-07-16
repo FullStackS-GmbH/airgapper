@@ -102,7 +102,7 @@ func TestResolveByRef_Found(t *testing.T) {
 
 	store := credentials.NewFileStore(testCredentials())
 
-	cred, err := store.ResolveByRef("docker-hub")
+	cred, err := store.ResolveByRef("docker-hub", domain.CredentialTypeImage)
 	require.NoError(t, err)
 	require.NotNil(t, cred)
 	assert.Equal(t, "docker-hub", cred.Name)
@@ -114,7 +114,48 @@ func TestResolveByRef_NotFound(t *testing.T) {
 
 	store := credentials.NewFileStore(testCredentials())
 
-	_, err := store.ResolveByRef("nonexistent")
+	_, err := store.ResolveByRef("nonexistent", domain.CredentialTypeImage)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, domain.ErrCredentialNotFound))
+}
+
+func TestResolveByRef_SameNameForDifferentTypes(t *testing.T) {
+	t.Parallel()
+
+	store := credentials.NewFileStore([]domain.Credential{
+		{Name: "registry.example.com", Type: domain.CredentialTypeImage, Username: "image-user"},
+		{Name: "registry.example.com", Type: domain.CredentialTypeHelm, Username: "helm-user"},
+	})
+
+	imageCred, err := store.ResolveByRef("registry.example.com", domain.CredentialTypeImage)
+	require.NoError(t, err)
+	assert.Equal(t, "image-user", imageCred.Username)
+
+	helmCred, err := store.ResolveByRef("registry.example.com", domain.CredentialTypeHelm)
+	require.NoError(t, err)
+	assert.Equal(t, "helm-user", helmCred.Username)
+}
+
+func TestResolveByRef_WrongType(t *testing.T) {
+	t.Parallel()
+
+	store := credentials.NewFileStore(testCredentials())
+
+	_, err := store.ResolveByRef("docker-hub", domain.CredentialTypeHelm)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrCredentialNotFound)
+}
+
+func TestResolve_DuplicateNameAndTypeLastEntryWins(t *testing.T) {
+	t.Parallel()
+
+	store := credentials.NewFileStore([]domain.Credential{
+		{Name: "registry.example.com", Type: domain.CredentialTypeImage, Username: "old-user"},
+		{Name: "registry.example.com", Type: domain.CredentialTypeImage, Username: "new-user"},
+	})
+
+	cred, err := store.Resolve("registry.example.com", domain.CredentialTypeImage)
+	require.NoError(t, err)
+	require.NotNil(t, cred)
+	assert.Equal(t, "new-user", cred.Username)
 }

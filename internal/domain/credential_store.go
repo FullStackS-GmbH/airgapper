@@ -8,8 +8,8 @@ type CredentialStore interface {
 	// anonymous access should be used.
 	Resolve(host string, credType CredentialType) (*Credential, error)
 
-	// ResolveByRef finds credentials by their reference name as specified in
-	// the resource configuration. It returns ErrCredentialNotFound if the
-	// reference does not exist.
-	ResolveByRef(ref string) (*Credential, error)
+	// ResolveByRef finds credentials by their reference name and type as
+	// specified in the resource configuration. It returns
+	// ErrCredentialNotFound if the reference does not exist for that type.
+	ResolveByRef(ref string, credType CredentialType) (*Credential, error)
 }

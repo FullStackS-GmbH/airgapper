@@ -144,7 +144,7 @@ func (e *Engine) expandVersions(ctx context.Context, t domain.Transporter, res d
 		// Version is a pattern; list available versions and filter.
 		var creds *domain.Credential
 		if res.SourceCredentialsRef != "" && opts.Credentials != nil {
-			c, err := opts.Credentials.ResolveByRef(res.SourceCredentialsRef)
+			c, err := opts.Credentials.ResolveByRef(res.SourceCredentialsRef, credentialTypeForResource(res.Type))
 			if err != nil {
 				return nil, nil, fmt.Errorf("resolve source credentials for pattern expansion: %w", err)
 			}
@@ -180,6 +180,19 @@ func (e *Engine) expandVersions(ctx context.Context, t domain.Transporter, res d
 	}
 
 	return expanded, ops, nil
+}
+
+func credentialTypeForResource(resourceType domain.ResourceType) domain.CredentialType {
+	switch resourceType {
+	case domain.ResourceTypeImage:
+		return domain.CredentialTypeImage
+	case domain.ResourceTypeHelm:
+		return domain.CredentialTypeHelm
+	case domain.ResourceTypeGit:
+		return domain.CredentialTypeGit
+	default:
+		return domain.CredentialType("")
+	}
 }
 
 // scanVersions runs the configured scanner against each version of the

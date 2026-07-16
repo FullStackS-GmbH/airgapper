@@ -6,7 +6,12 @@ on:
       - main
 
 # Drop all top-level permissions; each job declares only what it needs.
-permissions: { }
+permissions: {}
+
+# Avoid racing two semantic-release runs when pushes arrive close together.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   lint:
@@ -42,7 +47,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Test
-        run: go test -tags=containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay -v ./...
+        run: make test
 
   tag:
     name: "[tag] go-semantic-release"

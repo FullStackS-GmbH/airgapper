@@ -33,7 +33,7 @@ on:
         required: false
         type: string
       debug:
-        description: "Enable debug mode"
+        description: "Enable debug logging"
         default: ""
         required: false
         type: string
@@ -45,6 +45,9 @@ on:
     secrets:
       GHCR_PAT:
         required: true
+      AIRGAPPER_CREDENTIALS:
+        description: "Credential YAML consumed by airgapper"
+        required: false
 
 # Restrict permissions to the minimum needed.
 permissions:
@@ -64,27 +67,50 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Show config files
+      - name: Validate configuration
+        shell: sh
         run: |
-          if [ -z "$CONFIG_FOLDER" ]; then CONFIG_FOLDER="${GITHUB_WORKSPACE}"; fi
-          echo "========================================================"
-          echo "================ Universal Airgapper ==================="
-          echo "====================== CONFIG =========================="
-          cat "$CONFIG_FOLDER"/*.yaml || true
-          echo "========================================================"
+          config_folder="${CONFIG_FOLDER:-$GITHUB_WORKSPACE}"
+          if [ ! -d "$config_folder" ]; then
+            echo "::error::Config folder does not exist: $config_folder"
+            exit 2
+          fi
+
+          config_files=$(find "$config_folder" -maxdepth 1 -type f \( \
+            -name '*.config.airgapper.yaml' -o -name '*.config.airgapper.yml' \) -print)
+          if [ -z "$config_files" ]; then
+            echo "::error::No *.config.airgapper.yaml or *.config.airgapper.yml files found in $config_folder"
+            exit 2
+          fi
+
+          echo "Using airgapper configuration:"
+          printf '%s\n' "$config_files"
         env:
           CONFIG_FOLDER: ${{ inputs.config-folder }}
-
-      - name: Write credentials file
-        run: printf '%s' "$CREDENTIALS" > credentials.yaml
-        env:
-          CREDENTIALS: ${{ secrets[inputs.credentials-secret-name] }}
 
       - name: Run Universal Airgapper
+        shell: sh
         run: |
-          /airgapper sync \
+          credentials_file="${RUNNER_TEMP}/airgapper-credentials.yaml"
+          trap 'rm -f "$credentials_file"' EXIT
+          umask 077
+          if [ -z "$AIRGAPPER_CREDENTIALS" ]; then
+            echo "::error::The airgapper credentials secret is empty"
+            exit 2
+          fi
+          printf '%s' "$AIRGAPPER_CREDENTIALS" > "$credentials_file"
+
+          set -- /airgapper sync \
             --config "${CONFIG_FOLDER:-$GITHUB_WORKSPACE}" \
-            --credentials credentials.yaml $DEBUG_FLAG
+            --credentials "$credentials_file"
+          if [ "$DEBUG" = "--debug" ]; then
+            set -- "$@" --debug
+          elif [ -n "$DEBUG" ]; then
+            echo "::error::The debug input must be empty or --debug"
+            exit 2
+          fi
+          "$@"
         env:
           CONFIG_FOLDER: ${{ inputs.config-folder }}
-          DEBUG_FLAG: ${{ inputs.debug }}
+          DEBUG: ${{ inputs.debug }}
+          AIRGAPPER_CREDENTIALS: ${{ secrets.AIRGAPPER_CREDENTIALS || secrets[inputs.credentials-secret-name] }}

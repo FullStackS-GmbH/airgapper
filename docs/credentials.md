@@ -76,7 +76,7 @@ Resources can reference credentials explicitly, or the tool resolves them automa
 
 ### Resolution Order
 
-1. **By explicit reference**: If the resource specifies `source_credentials_ref` or `target_credentials_ref`, the tool looks up the credential by its `name` field. If the referenced name does not exist, the operation fails with an error.
+1. **By explicit reference**: If the resource specifies `source_credentials_ref` or `target_credentials_ref`, the tool looks up the credential by its `name` and resource type. The same name can therefore be used for image and Helm credentials. If the referenced name does not exist for that type, the operation fails with an error.
 
 2. **By hostname**: If no explicit reference is set, the tool extracts the hostname from the endpoint URL and searches for a credential whose `name` matches that hostname.
 
