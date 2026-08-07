@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/config"
 	"github.com/fullstacks-gmbh/airgapper/internal/credentials"
@@ -12,7 +11,6 @@ import (
 	"github.com/fullstacks-gmbh/airgapper/internal/logging"
 	"github.com/fullstacks-gmbh/airgapper/internal/scanner"
 	"github.com/fullstacks-gmbh/airgapper/internal/sync"
-	"github.com/fullstacks-gmbh/airgapper/internal/transport"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport/git"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport/helm"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport/image"
@@ -32,13 +30,20 @@ func newSyncCmd() *cobra.Command {
 // runSync is the RunE handler for the sync subcommand. It loads configuration,
 // sets up the transport pipeline, and runs the sync engine.
 func runSync(cmd *cobra.Command, _ []string) error {
-	// Read settings from viper (flags + env vars).
-	configPath := viper.GetString("config")
-	credsPath := viper.GetString("credentials")
-	debug := viper.GetBool("debug")
-	dryRun := viper.GetBool("dry_run")
-	logFormat := viper.GetString("log_format")
-	dryRunLogPath := viper.GetString("dry_run_log")
+	// Read settings from flags, falling back to AIRGAPPER_* env vars.
+	configPath := stringFlag(cmd, "config", "CONFIG")
+	credsPath := stringFlag(cmd, "credentials", "CREDENTIALS")
+	logFormat := stringFlag(cmd, "log-format", "LOG_FORMAT")
+	dryRunLogPath := stringFlag(cmd, "dry-run-log", "DRY_RUN_LOG")
+
+	debug, err := boolFlag(cmd, "debug", "DEBUG")
+	if err != nil {
+		return err
+	}
+	dryRun, err := boolFlag(cmd, "dry-run", "DRY_RUN")
+	if err != nil {
+		return err
+	}
 
 	// Initialize structured logger.
 	logger := logging.NewLogger(debug, logFormat)
@@ -71,19 +76,9 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		credStore = credentials.NewFileStore(nil)
 	}
 
-	// Create transporters for all supported resource types.
-	imageT := image.New(logger)
-	helmT := helm.New(logger)
-	gitT := git.New(logger)
-
-	// Create the transport factory.
-	factory := transport.NewFactory(imageT, helmT, gitT)
-
-	// Create scanners from configuration.
-	scanners := scanner.NewFromConfig(cfg.Scanners)
-
-	// Create the sync engine.
-	engine := sync.NewEngine(factory, scanners, logger)
+	// Create the sync engine with a transporter per supported resource type.
+	transporters := []domain.Transporter{image.New(logger), helm.New(logger), git.New(logger)}
+	engine := sync.NewEngine(transporters, scanner.NewFromConfig(cfg.Scanners), logger)
 
 	// Convert config resources to domain resources.
 	resources := make([]domain.Resource, 0, len(cfg.Resources))
@@ -98,13 +93,18 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		Logger:      logger,
 	}
 
-	// Run the sync engine.
-	results, err := engine.Run(cmd.Context(), resources, opts)
+	// Run the sync engine, bounded by the optional --timeout.
+	ctx, cancel, err := withRunTimeout(cmd)
 	if err != nil {
-		return fmt.Errorf("sync engine: %w", err)
+		return err
 	}
+	defer cancel()
 
-	// Print individual results.
+	results, runErr := engine.Run(ctx, resources, opts)
+
+	// Print whatever the run produced before acting on runErr. A run cut short
+	// by a timeout has still mirrored real artifacts, and the operator needs
+	// the report of what landed and what did not.
 	hasFailures := false
 	for _, result := range results {
 		source := result.Resource.Source.String()
@@ -137,6 +137,10 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		} else {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Dry-run log written to: %s\n", logPath)
 		}
+	}
+
+	if runErr != nil {
+		return fmt.Errorf("sync engine: %w", runErr)
 	}
 
 	if hasFailures {

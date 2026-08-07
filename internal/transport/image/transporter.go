@@ -10,6 +10,7 @@ import (
 	"go.podman.io/image/v5/docker"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport/registry"
 )
 
@@ -33,24 +34,15 @@ func (t *Transporter) Type() domain.ResourceType {
 // Sync copies container images from source to destination for each version
 // listed in the resource. It respects the PushMode and DryRun settings.
 func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts domain.SyncOptions) (*domain.SyncResult, error) {
-	result := &domain.SyncResult{Resource: resource}
 	logger := opts.Logger
 	if logger == nil {
 		logger = t.logger
 	}
 
-	for _, version := range resource.Versions {
-		vr, ops := t.syncVersion(ctx, resource, version, opts, logger)
-		result.Operations = append(result.Operations, ops...)
-		switch vr.Status {
-		case domain.SyncStatusSynced:
-			result.Synced = append(result.Synced, vr)
-		case domain.SyncStatusSkipped:
-			result.Skipped = append(result.Skipped, vr)
-		case domain.SyncStatusFailed:
-			result.Failed = append(result.Failed, vr)
-		}
-	}
+	result := transport.SyncVersions(resource.Versions, func(version string) (domain.VersionResult, []domain.OperationRecord) {
+		return t.syncVersion(ctx, resource, version, opts, logger)
+	})
+	result.Resource = resource
 
 	return result, nil
 }
@@ -73,13 +65,13 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 		}
 	}
 
-	srcCred, err := resolveCredentials(resource.SourceCredentialsRef, resource.Source, domain.CredentialTypeImage, opts.Credentials)
+	srcCred, err := registry.ResolveCredentials(resource.SourceCredentialsRef, resource.Source.Registry, domain.CredentialTypeImage, opts.Credentials)
 	if err != nil {
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve source credentials: %w", err)},
 			[]domain.OperationRecord{op(domain.OpFail, "resolve source credentials: "+err.Error())}
 	}
 
-	dstCred, err := resolveCredentials(resource.TargetCredentialsRef, resource.Destination, domain.CredentialTypeImage, opts.Credentials)
+	dstCred, err := registry.ResolveCredentials(resource.TargetCredentialsRef, resource.Destination.Registry, domain.CredentialTypeImage, opts.Credentials)
 	if err != nil {
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve target credentials: %w", err)},
 			[]domain.OperationRecord{op(domain.OpFail, "resolve target credentials: "+err.Error())}
@@ -91,7 +83,7 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 	}
 
 	if opts.DryRun {
-		return t.dryRunResult(resource, version, exists, logger, op)
+		return transport.DryRunResult(resource.PushMode, version, exists, logger, op)
 	}
 
 	if exists && resource.PushMode == domain.PushModeSkip {
@@ -100,12 +92,12 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
 	}
 
-	srcRef, _, err := registry.ParseDockerRef(srcRefStr)
+	srcRef, err := registry.ParseRef(srcRefStr)
 	if err != nil {
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: err},
 			[]domain.OperationRecord{op(domain.OpFail, err.Error())}
 	}
-	dstRef, _, err := registry.ParseDockerRef(dstRefStr)
+	dstRef, err := registry.ParseRef(dstRefStr)
 	if err != nil {
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: err},
 			[]domain.OperationRecord{op(domain.OpFail, err.Error())}
@@ -134,57 +126,31 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 
 	var ops []domain.OperationRecord
 	ops = append(ops, op(domain.OpPull, "pulled from source"))
-	if exists && (resource.PushMode == domain.PushModeForce || resource.PushMode == domain.PushModeOverwrite) {
-		ops = append(ops, op(domain.OpForce, "force pushed (overwritten)"))
+	if exists && resource.PushMode == domain.PushModeForce {
+		ops = append(ops, op(domain.OpOverwrite, "force pushed (overwritten)"))
 	} else {
 		ops = append(ops, op(domain.OpPush, "pushed to destination"))
 	}
 	return domain.VersionResult{Version: version, Status: domain.SyncStatusSynced, Message: "copied"}, ops
 }
 
-// dryRunResult returns the appropriate dry-run result based on existence and push mode.
-func (t *Transporter) dryRunResult(resource domain.Resource, version string, exists bool, logger *slog.Logger, op func(domain.OperationType, string) domain.OperationRecord) (domain.VersionResult, []domain.OperationRecord) {
-	var msg string
-	var opRec domain.OperationRecord
-
-	switch {
-	case exists && resource.PushMode == domain.PushModeSkip:
-		msg = "dry-run: would skip (already exists)"
-		opRec = op(domain.OpSkip, msg)
-	case exists:
-		msg = "dry-run: would overwrite (already exists)"
-		opRec = op(domain.OpOverwrite, msg)
-	default:
-		msg = "dry-run: would sync"
-		opRec = op(domain.OpPush, msg)
-	}
-
-	logger.Info(msg)
-	return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: msg},
-		[]domain.OperationRecord{opRec}
-}
-
-// Exists checks whether a specific image tag exists at the given endpoint.
-// Any error from the registry (404, auth, network) is treated as "not found"
-// to match the prior go-containerregistry behavior.
+// Exists checks whether a specific image tag exists at the given endpoint. An
+// absent tag yields (false, nil); a credential or rate-limit failure is
+// returned so the caller can report it. See registry.ManifestExists.
 func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, version string, creds *domain.Credential) (bool, error) {
 	refStr := buildRef(endpoint, version)
-	ref, _, err := registry.ParseDockerRef(refStr)
+	ref, err := registry.ParseRef(refStr)
 	if err != nil {
 		return false, fmt.Errorf("parse reference %q: %w", refStr, err)
 	}
 
-	sys := registry.SystemContext(creds, false)
-	if _, err := docker.GetDigest(ctx, sys, ref); err != nil {
-		return false, nil
-	}
-	return true, nil
+	return registry.ManifestExists(ctx, registry.SystemContext(creds, false), ref, t.logger)
 }
 
 // ListVersions returns all tags available at the given endpoint.
 func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint, creds *domain.Credential) ([]string, error) {
 	repo := endpoint.String()
-	ref, _, err := registry.ParseRepoRef(repo)
+	ref, err := registry.ParseRef(repo)
 	if err != nil {
 		return nil, fmt.Errorf("parse repo %q: %w", repo, err)
 	}
@@ -202,28 +168,4 @@ func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint
 func buildRef(ep domain.Endpoint, version string) string {
 	base := ep.String()
 	return base + ":" + version
-}
-
-// resolveCredentials resolves credentials for an endpoint. If credRef is
-// non-empty, it uses ResolveByRef for an explicit credential reference.
-// Otherwise, it falls back to Resolve using the endpoint registry as the host.
-// A nil store or no matching credential results in nil (anonymous access).
-func resolveCredentials(credRef string, endpoint domain.Endpoint, credType domain.CredentialType, store domain.CredentialStore) (*domain.Credential, error) {
-	if store == nil {
-		return nil, nil
-	}
-
-	if credRef != "" {
-		cred, err := store.ResolveByRef(credRef, credType)
-		if err != nil {
-			return nil, fmt.Errorf("resolve credential ref %q: %w", credRef, err)
-		}
-		return cred, nil
-	}
-
-	cred, err := store.Resolve(endpoint.Registry, credType)
-	if err != nil {
-		return nil, fmt.Errorf("resolve credential for host %q: %w", endpoint.Registry, err)
-	}
-	return cred, nil
 }

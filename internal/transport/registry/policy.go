@@ -2,7 +2,6 @@ package registry
 
 import (
 	"fmt"
-	"sync"
 
 	"go.podman.io/image/v5/signature"
 )
@@ -12,22 +11,18 @@ import (
 // a follow-up.
 const permissivePolicyJSON = `{"default":[{"type":"insecureAcceptAnything"}]}`
 
-var (
-	policyOnce sync.Once
-	policyCtx  *signature.PolicyContext
-	policyErr  error
-)
+var permissivePolicy, permissivePolicyErr = newPermissivePolicy()
+
+func newPermissivePolicy() (*signature.PolicyContext, error) {
+	policy, err := signature.NewPolicyFromBytes([]byte(permissivePolicyJSON))
+	if err != nil {
+		return nil, fmt.Errorf("parse permissive policy: %w", err)
+	}
+	return signature.NewPolicyContext(policy)
+}
 
 // PermissivePolicyContext returns a process-wide PolicyContext that accepts
 // any image. Safe for concurrent use.
 func PermissivePolicyContext() (*signature.PolicyContext, error) {
-	policyOnce.Do(func() {
-		policy, err := signature.NewPolicyFromBytes([]byte(permissivePolicyJSON))
-		if err != nil {
-			policyErr = fmt.Errorf("parse permissive policy: %w", err)
-			return
-		}
-		policyCtx, policyErr = signature.NewPolicyContext(policy)
-	})
-	return policyCtx, policyErr
+	return permissivePolicy, permissivePolicyErr
 }

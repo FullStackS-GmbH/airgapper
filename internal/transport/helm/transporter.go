@@ -11,6 +11,7 @@ import (
 	"helm.sh/helm/v4/pkg/registry"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport"
 	transportregistry "github.com/fullstacks-gmbh/airgapper/internal/transport/registry"
 )
 
@@ -34,25 +35,17 @@ func (t *Transporter) Type() domain.ResourceType {
 // Sync copies Helm charts from source to destination for each version listed
 // in the resource. It respects the PushMode and DryRun settings.
 func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts domain.SyncOptions) (*domain.SyncResult, error) {
-	effectiveResource := resource
-	result := &domain.SyncResult{}
 	logger := opts.Logger
 	if logger == nil {
 		logger = t.logger
 	}
 
-	for _, version := range effectiveResource.Versions {
-		vr, ops := t.syncVersion(ctx, &effectiveResource, version, opts, logger)
-		result.Operations = append(result.Operations, ops...)
-		switch vr.Status {
-		case domain.SyncStatusSynced:
-			result.Synced = append(result.Synced, vr)
-		case domain.SyncStatusSkipped:
-			result.Skipped = append(result.Skipped, vr)
-		case domain.SyncStatusFailed:
-			result.Failed = append(result.Failed, vr)
-		}
-	}
+	// syncVersion resolves the effective destination repository (chart name) as
+	// it goes, so it takes a pointer and the resolved copy is reported below.
+	effectiveResource := resource
+	result := transport.SyncVersions(effectiveResource.Versions, func(version string) (domain.VersionResult, []domain.OperationRecord) {
+		return t.syncVersion(ctx, &effectiveResource, version, opts, logger)
+	})
 	result.Resource = effectiveResource
 
 	return result, nil
@@ -80,13 +73,13 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 	}
 
 	// Resolve credentials.
-	srcCred, err := resolveCredentials(resource.SourceCredentialsRef, resource.Source, domain.CredentialTypeHelm, opts.Credentials)
+	srcCred, err := transportregistry.ResolveCredentials(resource.SourceCredentialsRef, resource.Source.Registry, domain.CredentialTypeHelm, opts.Credentials)
 	if err != nil {
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve source credentials: %w", err)},
 			[]domain.OperationRecord{op(domain.OpFail, "resolve source credentials: "+err.Error())}
 	}
 
-	dstCred, err := resolveCredentials(resource.TargetCredentialsRef, resource.Destination, domain.CredentialTypeHelm, opts.Credentials)
+	dstCred, err := transportregistry.ResolveCredentials(resource.TargetCredentialsRef, resource.Destination.Registry, domain.CredentialTypeHelm, opts.Credentials)
 	if err != nil {
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve target credentials: %w", err)},
 			[]domain.OperationRecord{op(domain.OpFail, "resolve target credentials: "+err.Error())}
@@ -152,7 +145,7 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 
 	// Dry-run mode: report what would happen without mutating.
 	if opts.DryRun {
-		return t.dryRunResult(*resource, version, exists, logger, op)
+		return transport.DryRunResult(resource.PushMode, version, exists, logger, op)
 	}
 
 	if exists && resource.PushMode == domain.PushModeSkip {
@@ -174,13 +167,10 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 		}
 	}
 
-	// Helm v4 strict mode expects the push target to end in
-	// "/{chart-name}:{chart-version}".
-	dstPushRef := dstRef
-
-	// Push chart to destination.
+	// Push chart to destination. Helm v4 strict mode expects the push target to
+	// end in "/{chart-name}:{chart-version}", which dstRef already does.
 	logger.Info("pushing chart to destination")
-	_, err = destinationClient.Push(chartData, dstPushRef)
+	_, err = destinationClient.Push(chartData, dstRef)
 	if err != nil {
 		logger.Error("failed to push chart", "error", err)
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push chart: %w", err)},
@@ -191,7 +181,7 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 
 	var ops []domain.OperationRecord
 	ops = append(ops, op(domain.OpPull, "pulled from source"))
-	if exists && (resource.PushMode == domain.PushModeForce || resource.PushMode == domain.PushModeOverwrite) {
+	if exists && resource.PushMode == domain.PushModeForce {
 		ops = append(ops, op(domain.OpOverwrite, "overwritten at destination"))
 	} else {
 		ops = append(ops, op(domain.OpPush, "pushed to destination"))
@@ -199,32 +189,10 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 	return domain.VersionResult{Version: version, Status: domain.SyncStatusSynced, Message: "copied"}, ops
 }
 
-// dryRunResult returns the appropriate dry-run result based on existence and push mode.
-func (t *Transporter) dryRunResult(resource domain.Resource, version string, exists bool, logger *slog.Logger, op func(domain.OperationType, string) domain.OperationRecord) (domain.VersionResult, []domain.OperationRecord) {
-	var msg string
-	var opRec domain.OperationRecord
-
-	switch {
-	case exists && resource.PushMode == domain.PushModeSkip:
-		msg = "dry-run: would skip (already exists)"
-		opRec = op(domain.OpSkip, msg)
-	case exists:
-		msg = "dry-run: would overwrite (already exists)"
-		opRec = op(domain.OpOverwrite, msg)
-	default:
-		msg = "dry-run: would sync"
-		opRec = op(domain.OpPush, msg)
-	}
-
-	logger.Info(msg)
-	return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: msg},
-		[]domain.OperationRecord{opRec}
-}
-
 // PullChartBytes pulls a Helm chart and returns its raw tarball bytes.
 // It supports both OCI and legacy HTTP chart repositories.
 func (t *Transporter) PullChartBytes(ctx context.Context, resource domain.Resource, version string, credStore domain.CredentialStore) ([]byte, error) {
-	srcCred, err := resolveCredentials(resource.SourceCredentialsRef, resource.Source, domain.CredentialTypeHelm, credStore)
+	srcCred, err := transportregistry.ResolveCredentials(resource.SourceCredentialsRef, resource.Source.Registry, domain.CredentialTypeHelm, credStore)
 	if err != nil {
 		return nil, fmt.Errorf("resolve source credentials: %w", err)
 	}
@@ -255,9 +223,8 @@ func (t *Transporter) PullChartBytes(ctx context.Context, resource domain.Resour
 }
 
 // Exists checks whether a specific chart version exists at the given endpoint.
-// For OCI registries, it checks for the OCI manifest using remote.Head. For
-// legacy repositories, it fetches index.yaml and searches for the chart
-// version.
+// For OCI registries it looks up the manifest; for legacy repositories it
+// fetches index.yaml and searches for the chart version.
 func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, version string, creds *domain.Credential) (bool, error) {
 	if !IsOCIRegistry(endpoint.Registry) {
 		return t.legacyChartExists(ctx, endpoint, version, creds)
@@ -266,16 +233,12 @@ func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, vers
 	// Build an OCI reference for the manifest check.
 	refStr := fmt.Sprintf("%s/%s:%s", extractHost(endpoint.Registry), endpoint.Repository, ociTag(version))
 
-	ref, _, err := transportregistry.ParseDockerRef(refStr)
+	ref, err := transportregistry.ParseRef(refStr)
 	if err != nil {
 		return false, fmt.Errorf("parse reference %q: %w", refStr, err)
 	}
 
-	sys := transportregistry.SystemContext(creds, false)
-	if _, err := docker.GetDigest(ctx, sys, ref); err != nil {
-		return false, nil
-	}
-	return true, nil
+	return transportregistry.ManifestExists(ctx, transportregistry.SystemContext(creds, false), ref, t.logger)
 }
 
 // ListVersions returns all available versions for a chart at the given
@@ -287,7 +250,7 @@ func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint
 	}
 
 	repo := fmt.Sprintf("%s/%s", extractHost(endpoint.Registry), endpoint.Repository)
-	ref, _, err := transportregistry.ParseRepoRef(repo)
+	ref, err := transportregistry.ParseRef(repo)
 	if err != nil {
 		return nil, fmt.Errorf("parse repo %q: %w", repo, err)
 	}
@@ -357,39 +320,9 @@ func ociTag(version string) string {
 	return strings.ReplaceAll(version, "+", "_")
 }
 
-// resolveCredentials resolves credentials for an endpoint. If credRef is
-// non-empty, it uses ResolveByRef. Otherwise, it falls back to Resolve using
-// the endpoint registry as the host.
-func resolveCredentials(credRef string, endpoint domain.Endpoint, credType domain.CredentialType, store domain.CredentialStore) (*domain.Credential, error) {
-	if store == nil {
-		return nil, nil
-	}
-
-	if credRef != "" {
-		cred, err := store.ResolveByRef(credRef, credType)
-		if err != nil {
-			return nil, fmt.Errorf("resolve credential ref %q: %w", credRef, err)
-		}
-		return cred, nil
-	}
-
-	cred, err := store.Resolve(endpoint.Registry, credType)
-	if err != nil {
-		return nil, fmt.Errorf("resolve credential for host %q: %w", endpoint.Registry, err)
-	}
-	return cred, nil
-}
-
-// extractHost removes the "oci://" prefix and any trailing path from a
-// registry string, returning just the hostname (and optional port).
+// extractHost removes the "oci://" prefix and any trailing slashes from a
+// registry string, returning the hostname and optional port. Unlike hostOf it
+// keeps the port, since it feeds registry references and Helm logins.
 func extractHost(registry string) string {
-	host := registry
-	if len(host) > 6 && host[:6] == "oci://" {
-		host = host[6:]
-	}
-	// Remove trailing slashes.
-	for len(host) > 0 && host[len(host)-1] == '/' {
-		host = host[:len(host)-1]
-	}
-	return host
+	return strings.TrimRight(strings.TrimPrefix(registry, "oci://"), "/")
 }

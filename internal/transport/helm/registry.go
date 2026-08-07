@@ -43,21 +43,7 @@ func IsOCIRegistry(registryURL string) bool {
 
 	hasHTTPScheme := strings.HasPrefix(registryURL, "http://") || strings.HasPrefix(registryURL, "https://")
 
-	// Strip any scheme for hostname comparison.
-	host := registryURL
-	if idx := strings.Index(host, "://"); idx != -1 {
-		host = host[idx+3:]
-	}
-
-	// Remove trailing path components.
-	if idx := strings.Index(host, "/"); idx != -1 {
-		host = host[:idx]
-	}
-
-	// Remove port if present.
-	if idx := strings.LastIndex(host, ":"); idx != -1 {
-		host = host[:idx]
-	}
+	host := hostOf(registryURL)
 
 	// Direct match.
 	if knownOCIHosts[host] {
@@ -84,6 +70,20 @@ func IsOCIRegistry(registryURL string) bool {
 	return false
 }
 
+// hostOf strips the scheme, any path components, and the port from a registry
+// string, leaving just the hostname.
+func hostOf(registryURL string) string {
+	host := registryURL
+	if _, after, found := strings.Cut(host, "://"); found {
+		host = after
+	}
+	host, _, _ = strings.Cut(host, "/")
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	return host
+}
+
 func isLocalRegistryHost(host string) bool {
 	return host == "localhost" ||
 		host == "127.0.0.1" ||
@@ -97,19 +97,7 @@ func needsPlainHTTP(registryURL string) bool {
 		return true
 	}
 
-	host := registryURL
-	host = strings.TrimPrefix(host, "oci://")
-	if idx := strings.Index(host, "://"); idx != -1 {
-		host = host[idx+3:]
-	}
-	if idx := strings.Index(host, "/"); idx != -1 {
-		host = host[:idx]
-	}
-	if idx := strings.LastIndex(host, ":"); idx != -1 {
-		host = host[:idx]
-	}
-
-	return isLocalRegistryHost(host)
+	return isLocalRegistryHost(hostOf(registryURL))
 }
 
 // NormalizeOCIRef builds an OCI reference string for a Helm chart. The

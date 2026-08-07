@@ -109,11 +109,8 @@ func validateResource(index int, rc *ResourceConfig) error {
 	}
 
 	// Validate push_mode if explicitly set.
-	if rc.PushMode != "" {
-		pm := domain.PushMode(strings.ToLower(strings.TrimSpace(rc.PushMode)))
-		if !pm.Valid() {
-			return fmt.Errorf("%s: invalid push_mode %q: %w", prefix, rc.PushMode, domain.ErrInvalidConfig)
-		}
+	if _, ok := domain.ParsePushMode(rc.PushMode); !ok {
+		return fmt.Errorf("%s: invalid push_mode %q: %w", prefix, rc.PushMode, domain.ErrInvalidConfig)
 	}
 
 	return nil

@@ -8,29 +8,6 @@ import (
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
 
-func TestResourceType_Valid(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		rt   domain.ResourceType
-		want bool
-	}{
-		{"image is valid", domain.ResourceTypeImage, true},
-		{"helm is valid", domain.ResourceTypeHelm, true},
-		{"git is valid", domain.ResourceTypeGit, true},
-		{"empty is invalid", domain.ResourceType(""), false},
-		{"unknown is invalid", domain.ResourceType("unknown"), false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tt.want, tt.rt.Valid())
-		})
-	}
-}
-
 func TestResourceType_String(t *testing.T) {
 	t.Parallel()
 
@@ -52,46 +29,30 @@ func TestResourceType_String(t *testing.T) {
 	}
 }
 
-func TestPushMode_Valid(t *testing.T) {
+func TestParsePushMode(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		pm   domain.PushMode
-		want bool
+		name  string
+		in    string
+		want  domain.PushMode
+		wantK bool
 	}{
-		{"skip is valid", domain.PushModeSkip, true},
-		{"force is valid", domain.PushModeForce, true},
-		{"overwrite is valid", domain.PushModeOverwrite, true},
-		{"empty is invalid", domain.PushMode(""), false},
-		{"unknown is invalid", domain.PushMode("unknown"), false},
+		{"empty defaults to skip", "", domain.PushModeSkip, true},
+		{"skip", "skip", domain.PushModeSkip, true},
+		{"force", "force", domain.PushModeForce, true},
+		{"overwrite is an alias for force", "overwrite", domain.PushModeForce, true},
+		{"case insensitive", "FORCE", domain.PushModeForce, true},
+		{"whitespace trimmed", "  skip  ", domain.PushModeSkip, true},
+		{"unknown is rejected", "clobber", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.want, tt.pm.Valid())
-		})
-	}
-}
-
-func TestPushMode_String(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		pm   domain.PushMode
-		want string
-	}{
-		{"skip", domain.PushModeSkip, "skip"},
-		{"force", domain.PushModeForce, "force"},
-		{"overwrite", domain.PushModeOverwrite, "overwrite"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tt.want, tt.pm.String())
+			got, ok := domain.ParsePushMode(tt.in)
+			assert.Equal(t, tt.wantK, ok)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -113,27 +74,6 @@ func TestSyncStatus_String(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			assert.Equal(t, tt.want, tt.ss.String())
-		})
-	}
-}
-
-func TestCredentialType_String(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		ct   domain.CredentialType
-		want string
-	}{
-		{"image", domain.CredentialTypeImage, "image"},
-		{"helm", domain.CredentialTypeHelm, "helm"},
-		{"git", domain.CredentialTypeGit, "git"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tt.want, tt.ct.String())
 		})
 	}
 }

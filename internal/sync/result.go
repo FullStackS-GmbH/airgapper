@@ -14,7 +14,6 @@ type OperationCounts struct {
 	Push      int
 	Skip      int
 	Overwrite int
-	Force     int
 	Fail      int
 }
 
@@ -101,8 +100,6 @@ func addOp(c *OperationCounts, op domain.OperationType) {
 		c.Skip++
 	case domain.OpOverwrite:
 		c.Overwrite++
-	case domain.OpForce:
-		c.Force++
 	case domain.OpFail:
 		c.Fail++
 	}
@@ -135,9 +132,9 @@ func FormatSummary(s Summary) string {
 	fmt.Fprintf(&b, "Resources: %d | Versions: %d | Synced: %d | Skipped: %d | Failed: %d\n",
 		s.TotalResources, s.TotalVersions, s.Synced, s.Skipped, s.Failed)
 
-	fmt.Fprintf(&b, "Operations: read=%d pull=%d push=%d skip=%d overwrite=%d force=%d fail=%d\n",
+	fmt.Fprintf(&b, "Operations: read=%d pull=%d push=%d skip=%d overwrite=%d fail=%d\n",
 		s.Operations.Read, s.Operations.Pull, s.Operations.Push,
-		s.Operations.Skip, s.Operations.Overwrite, s.Operations.Force, s.Operations.Fail)
+		s.Operations.Skip, s.Operations.Overwrite, s.Operations.Fail)
 
 	if len(s.ByType) > 0 {
 		b.WriteString("\nBy type:\n")

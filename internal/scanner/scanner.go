@@ -6,6 +6,7 @@ package scanner
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -81,8 +82,9 @@ func (cs *CommandScanner) Scan(ctx context.Context, artifact domain.ArtifactRef)
 	// Substitute placeholders in the command template.
 	expanded := cs.substituteCommand(artifact)
 
-	// Split the command into arguments using simple whitespace splitting.
-	args := strings.Fields(expanded)
+	// Split the command into arguments, honoring quotes so a configured
+	// command like `trivy image "{source}"` survives spaces in a quoted arg.
+	args := splitArgs(expanded)
 	if len(args) == 0 {
 		return nil, fmt.Errorf("scanner %q: empty command after expansion", cs.name)
 	}
@@ -105,7 +107,7 @@ func (cs *CommandScanner) Scan(ctx context.Context, artifact domain.ArtifactRef)
 	if err != nil {
 		// Check if this is an ExitError (command ran but returned non-zero).
 		var exitErr *exec.ExitError
-		if ok := isExitError(err, &exitErr); ok {
+		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else {
 			// The command could not be executed at all (binary not found, etc.).
@@ -136,12 +138,49 @@ func (cs *CommandScanner) substituteCommand(artifact domain.ArtifactRef) string 
 	return r.Replace(cs.command)
 }
 
-// isExitError checks whether err is an *exec.ExitError and, if so, assigns it
-// to the target pointer. This is a helper to keep the Scan method readable.
-func isExitError(err error, target **exec.ExitError) bool {
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		*target = exitErr
-		return true
+// splitArgs splits a command string into arguments, honoring single and double
+// quotes and backslash escapes so that a quoted argument containing spaces
+// survives as one token. It is a small shell-like tokenizer, not a full shell:
+// it performs no variable/glob expansion.
+func splitArgs(s string) []string {
+	var (
+		args    []string
+		cur     strings.Builder
+		inArg   bool
+		quote   rune // 0, '\'' or '"'
+		escaped bool
+	)
+	for _, r := range s {
+		switch {
+		case escaped:
+			cur.WriteRune(r)
+			inArg = true
+			escaped = false
+		case r == '\\' && quote != '\'':
+			escaped = true
+			inArg = true
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				cur.WriteRune(r)
+			}
+		case r == '\'' || r == '"':
+			quote = r
+			inArg = true
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r':
+			if inArg {
+				args = append(args, cur.String())
+				cur.Reset()
+				inArg = false
+			}
+		default:
+			cur.WriteRune(r)
+			inArg = true
+		}
 	}
-	return false
+	if inArg {
+		args = append(args, cur.String())
+	}
+	return args
 }
