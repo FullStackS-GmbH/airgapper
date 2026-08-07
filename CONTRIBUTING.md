@@ -70,7 +70,7 @@ cmd/
 
 internal/
   cli/                        # Cobra command definitions (root, sync, helm images, version)
-    root.go                   # Root command, global persistent flags, viper binding
+    root.go                   # Root command, global persistent flags, env-var resolution
     sync.go                   # "sync" subcommand -- loads config, creates pipeline, runs engine
     helm.go                   # "helm" subcommand group
     helm_images.go            # "helm images" subcommand -- renders charts, extracts image refs

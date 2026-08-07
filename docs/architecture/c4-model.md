@@ -156,7 +156,7 @@ The Component diagram shows the internal building blocks of the Go binary, organ
 │  ║  │  internal/helmimages/           — Chart rendering + extraction  │  ║  │
 │  ║  │                                                                 │  ║  │
 │  ║  │  Responsibilities:                                              │  ║  │
-│  ║  │  • Parse CLI arguments and bind to viper                        │  ║  │
+│  ║  │  • Parse CLI arguments, with AIRGAPPER_* env fallbacks          │  ║  │
 │  ║  │  • Initialize logging (slog JSON handler)                       │  ║  │
 │  ║  │  • Load and validate configuration                              │  ║  │
 │  ║  │  • Wire dependencies (composition root)                         │  ║  │
@@ -165,7 +165,7 @@ The Component diagram shows the internal building blocks of the Go binary, organ
 │  ║  └─────────────────────────────────────────────────────────────────┘  ║  │
 │  ║                                                                       ║  │
 │  ║  ┌─────────────────────────────────────────────────────────────────┐  ║  │
-│  ║  │                Config Loader (viper)                            │  ║  │
+│  ║  │                Config Loader (yaml.v3)                          │  ║  │
 │  ║  │                                                                 │  ║  │
 │  ║  │  internal/config/loader.go    — Find and merge YAML files       │  ║  │
 │  ║  │  internal/config/validate.go  — Schema validation               │  ║  │
@@ -202,7 +202,7 @@ The Component diagram shows the internal building blocks of the Go binary, organ
 │  ║  │                                                                 │  ║  │
 │  ║  │  Responsibilities:                                              │  ║  │
 │  ║  │  • Iterate over resources from config                           │  ║  │
-│  ║  │  • Select transporter via factory (Strategy pattern)            │  ║  │
+│  ║  │  • Select transporter by resource type (Strategy pattern)       │  ║  │
 │  ║  │  • Run scanner before sync if configured                        │  ║  │
 │  ║  │  • Invoke transporter.Sync() for each resource                  │  ║  │
 │  ║  │  • Aggregate results (synced, skipped, failed)                  │  ║  │
@@ -460,24 +460,20 @@ func NewEngine(
 func (e *Engine) Run(ctx context.Context, resources []Resource, opts SyncOptions) ([]SyncResult, error)
 ```
 
-### Transport Factory
+### Shared Transport Helpers
 
 ```go
-// internal/transport/factory.go
+// internal/transport/versions.go
 
-// Factory creates Transporter instances based on resource type.
-type Factory struct {
-    registry map[ResourceType]NewTransporterFunc
-}
+// SyncVersions runs syncOne per version and buckets results by status.
+func SyncVersions(versions []string, syncOne func(version string) (VersionResult, []OperationRecord)) *SyncResult
 
-type NewTransporterFunc func(logger *slog.Logger) (Transporter, error)
-
-// NewFactory creates a factory with all registered transporter constructors.
-func NewFactory(logger *slog.Logger) *Factory
-
-// ForType returns the transporter for the given resource type.
-func (f *Factory) ForType(rt ResourceType) (Transporter, error)
+// DryRunResult reports what a sync would have done, without mutating anything.
+func DryRunResult(pushMode PushMode, version string, exists bool, logger *slog.Logger, op OpFunc) (VersionResult, []OperationRecord)
 ```
+
+Transporter selection lives in the sync engine: `NewEngine` indexes the
+transporters it is given by `Type()` into a `map[ResourceType]Transporter`.
 
 ### Dependency Flow
 
@@ -486,7 +482,7 @@ main.go
   │
   ├─► config.Load()           → Config struct
   ├─► credentials.NewStore()  → CredentialStore (interface)
-  ├─► transport.NewFactory()  → map[ResourceType]Transporter
+  ├─► image/helm/git.New()    → []Transporter
   ├─► scanner.New()           → map[string]Scanner
   ├─► sync.NewEngine()        → Engine (uses interfaces only)
   └─► cli.NewRootCmd()        → cobra.Command
