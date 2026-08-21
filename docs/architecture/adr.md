@@ -19,11 +19,13 @@ The domain core defines interfaces; adapters implement them. Dependencies point 
 **Context**: Three artifact types (image, helm, git) require different sync implementations but share the same lifecycle (check existence → scan → pull → push).
 
 **Decision**: Use the Strategy pattern via a single `Transporter` interface.
-A factory selects the correct implementation based on resource type.
+The sync engine indexes the transporters it is constructed with by `Type()`
+and selects the implementation for each resource from that map — no separate
+factory type, since the set of transporters is fixed at startup.
 
 **Consequences**:
 
-- Adding a new artifact type requires only implementing `Transporter` and registering it in the factory.
+- Adding a new artifact type requires only implementing `Transporter` and passing it to `sync.NewEngine`.
 - The sync engine does not need to change when new types are added.
 - All transports have a consistent interface, making the codebase predictable.
 

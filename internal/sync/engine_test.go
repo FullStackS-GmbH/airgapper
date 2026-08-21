@@ -11,7 +11,6 @@ import (
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 	"github.com/fullstacks-gmbh/airgapper/internal/sync"
-	"github.com/fullstacks-gmbh/airgapper/internal/transport"
 )
 
 // mockTransporter implements domain.Transporter for testing.
@@ -77,8 +76,8 @@ func TestEngine_SingleResource(t *testing.T) {
 		},
 	}
 
-	factory := transport.NewFactory(mt)
-	engine := sync.NewEngine(factory, nil, discardLogger())
+	transporters := []domain.Transporter{mt}
+	engine := sync.NewEngine(transporters, nil, discardLogger())
 
 	resources := []domain.Resource{
 		{
@@ -119,8 +118,8 @@ func TestEngine_PatternExpansion(t *testing.T) {
 		},
 	}
 
-	factory := transport.NewFactory(mt)
-	engine := sync.NewEngine(factory, nil, discardLogger())
+	transporters := []domain.Transporter{mt}
+	engine := sync.NewEngine(transporters, nil, discardLogger())
 
 	resources := []domain.Resource{
 		{
@@ -164,8 +163,8 @@ func TestEngine_DryRun(t *testing.T) {
 		},
 	}
 
-	factory := transport.NewFactory(mt)
-	engine := sync.NewEngine(factory, nil, discardLogger())
+	transporters := []domain.Transporter{mt}
+	engine := sync.NewEngine(transporters, nil, discardLogger())
 
 	resources := []domain.Resource{
 		{
@@ -218,9 +217,9 @@ func TestEngine_ScannerFailureFiltering(t *testing.T) {
 		},
 	}
 
-	factory := transport.NewFactory(mt)
+	transporters := []domain.Transporter{mt}
 	scanners := map[string]domain.Scanner{"test-scanner": ms}
-	engine := sync.NewEngine(factory, scanners, discardLogger())
+	engine := sync.NewEngine(transporters, scanners, discardLogger())
 
 	resources := []domain.Resource{
 		{
@@ -241,6 +240,70 @@ func TestEngine_ScannerFailureFiltering(t *testing.T) {
 	// Only v1.0.0 should have been synced (v2.0.0 filtered by scanner)
 	assert.Len(t, results[0].Synced, 1)
 	assert.Equal(t, "v1.0.0", results[0].Synced[0].Version)
+
+	// The rejected version must be reported as failed, not dropped: a version
+	// missing from the totals is indistinguishable from one never configured.
+	require.Len(t, results[0].Failed, 1)
+	assert.Equal(t, "v2.0.0", results[0].Failed[0].Version)
+	require.ErrorIs(t, results[0].Failed[0].Error, domain.ErrScanFailed)
+	assert.Equal(t, 2, results[0].TotalCount())
+}
+
+func TestEngine_ScannerExecutionErrorIsReportedNotDropped(t *testing.T) {
+	t.Parallel()
+
+	mt := &mockTransporter{
+		typeFn: func() domain.ResourceType { return domain.ResourceTypeImage },
+		syncFn: func(_ context.Context, r domain.Resource, _ domain.SyncOptions) (*domain.SyncResult, error) {
+			var synced []domain.VersionResult
+			for _, v := range r.Versions {
+				synced = append(synced, domain.VersionResult{Version: v, Status: domain.SyncStatusSynced})
+			}
+			return &domain.SyncResult{Resource: r, Synced: synced}, nil
+		},
+		listVersionsFn: func(context.Context, domain.Endpoint, *domain.Credential) ([]string, error) {
+			return nil, nil
+		},
+		existsFn: func(context.Context, domain.Endpoint, string, *domain.Credential) (bool, error) {
+			return false, nil
+		},
+	}
+
+	// The scanner binary cannot be executed at all — distinct from a scan that
+	// runs and fails the artifact.
+	ms := &mockScanner{
+		name: "broken-scanner",
+		scanFn: func(context.Context, domain.ArtifactRef) (*domain.ScanResult, error) {
+			return nil, fmt.Errorf("exec: %q: executable file not found in $PATH", "trivy")
+		},
+	}
+
+	engine := sync.NewEngine(
+		[]domain.Transporter{mt},
+		map[string]domain.Scanner{"broken-scanner": ms},
+		discardLogger(),
+	)
+
+	resources := []domain.Resource{
+		{
+			Type:        domain.ResourceTypeImage,
+			Source:      domain.Endpoint{Registry: "docker.io", Repository: "library/ubuntu"},
+			Destination: domain.Endpoint{Registry: "internal.io", Repository: "library/ubuntu"},
+			Versions:    []string{"v1.0.0", "v2.0.0"},
+			ScannerRef:  "broken-scanner",
+		},
+	}
+
+	results, err := engine.Run(context.Background(), resources, domain.SyncOptions{
+		Logger: discardLogger(),
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	assert.Empty(t, results[0].Synced, "nothing may be promoted when the scanner never ran")
+	assert.Len(t, results[0].Failed, 2, "both versions must be reported, not silently skipped")
+	assert.Equal(t, 2, results[0].TotalCount())
+	assert.Contains(t, results[0].Failed[0].Message, "could not run")
 }
 
 func TestEngine_MultipleResourcesConcurrent(t *testing.T) {
@@ -263,8 +326,8 @@ func TestEngine_MultipleResourcesConcurrent(t *testing.T) {
 		},
 	}
 
-	factory := transport.NewFactory(mt)
-	engine := sync.NewEngine(factory, nil, discardLogger())
+	transporters := []domain.Transporter{mt}
+	engine := sync.NewEngine(transporters, nil, discardLogger())
 
 	resources := make([]domain.Resource, 10)
 	for i := range resources {
@@ -292,8 +355,7 @@ func TestEngine_MultipleResourcesConcurrent(t *testing.T) {
 func TestEngine_UnsupportedTransport(t *testing.T) {
 	t.Parallel()
 
-	factory := transport.NewFactory() // empty factory
-	engine := sync.NewEngine(factory, nil, discardLogger())
+	engine := sync.NewEngine(nil, nil, discardLogger())
 
 	resources := []domain.Resource{
 		{
@@ -303,8 +365,64 @@ func TestEngine_UnsupportedTransport(t *testing.T) {
 		},
 	}
 
-	_, err := engine.Run(context.Background(), resources, domain.SyncOptions{
+	// A resource with no registered transporter is a failed resource, not a
+	// failed run: the report must name it rather than the run aborting.
+	results, err := engine.Run(context.Background(), resources, domain.SyncOptions{
 		Logger: discardLogger(),
 	})
-	require.Error(t, err)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	require.Len(t, results[0].Failed, 1)
+	assert.Equal(t, "v1.0.0", results[0].Failed[0].Version)
+	require.ErrorIs(t, results[0].Failed[0].Error, domain.ErrUnsupportedTransport)
+	assert.True(t, results[0].HasFailures())
+}
+
+func TestEngine_OneFailingResourceDoesNotAbortTheRest(t *testing.T) {
+	t.Parallel()
+
+	// Only the image transporter is registered, so the helm resource fails.
+	// The image resource must still be synced and reported.
+	mt := &mockTransporter{
+		typeFn: func() domain.ResourceType { return domain.ResourceTypeImage },
+		syncFn: func(_ context.Context, r domain.Resource, _ domain.SyncOptions) (*domain.SyncResult, error) {
+			return &domain.SyncResult{
+				Resource: r,
+				Synced:   []domain.VersionResult{{Version: "v1.0.0", Status: domain.SyncStatusSynced}},
+			}, nil
+		},
+		listVersionsFn: func(context.Context, domain.Endpoint, *domain.Credential) ([]string, error) {
+			return nil, nil
+		},
+		existsFn: func(context.Context, domain.Endpoint, string, *domain.Credential) (bool, error) {
+			return false, nil
+		},
+	}
+
+	engine := sync.NewEngine([]domain.Transporter{mt}, nil, discardLogger())
+
+	resources := []domain.Resource{
+		{
+			Type:     domain.ResourceTypeHelm,
+			Source:   domain.Endpoint{Registry: "charts.example.com", Repository: "nginx"},
+			Versions: []string{"1.0.0", "2.0.0"},
+		},
+		{
+			Type:     domain.ResourceTypeImage,
+			Source:   domain.Endpoint{Registry: "docker.io", Repository: "library/ubuntu"},
+			Versions: []string{"v1.0.0"},
+		},
+	}
+
+	results, err := engine.Run(context.Background(), resources, domain.SyncOptions{
+		Logger: discardLogger(),
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 2, "both resources must be reported")
+
+	summary := sync.Summarize(results)
+	assert.Equal(t, 1, summary.Synced, "the healthy resource still syncs")
+	assert.Equal(t, 2, summary.Failed, "both versions of the broken resource are counted")
+	assert.Equal(t, 3, summary.TotalVersions, "no version silently disappears")
 }

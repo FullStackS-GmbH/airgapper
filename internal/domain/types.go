@@ -168,10 +168,8 @@ const (
 	OpPush OperationType = "push"
 	// OpSkip indicates a version was skipped (already exists at destination).
 	OpSkip OperationType = "skip"
-	// OpOverwrite indicates an existing artifact was overwritten.
+	// OpOverwrite indicates an existing artifact was overwritten (force push).
 	OpOverwrite OperationType = "overwrite"
-	// OpForce indicates a force push was performed.
-	OpForce OperationType = "force"
 	// OpFail indicates an operation failed.
 	OpFail OperationType = "fail"
 )

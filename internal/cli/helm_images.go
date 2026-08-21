@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/config"
 	"github.com/fullstacks-gmbh/airgapper/internal/credentials"
@@ -20,24 +19,23 @@ func newHelmImagesCmd() *cobra.Command {
 		Short: "Extract container image references from Helm charts",
 		RunE:  runHelmImages,
 	}
-	cmd.Flags().StringP("output", "o", "", "Path to write the generated image config YAML")
-	cmd.Flags().String("target-credentials-ref", "", "Name of a helm credential entry (its Name field is used as destination registry)")
-
-	_ = viper.BindPFlag("helm_images_output", cmd.Flags().Lookup("output"))
-	_ = viper.BindPFlag("helm_images_target_credentials_ref", cmd.Flags().Lookup("target-credentials-ref"))
-	_ = viper.BindEnv("helm_images_output", "AIRGAPPER_HELM_IMAGES_OUTPUT")
-	_ = viper.BindEnv("helm_images_target_credentials_ref", "AIRGAPPER_HELM_IMAGES_TARGET_CREDENTIALS_REF")
+	cmd.Flags().StringP("output", "o", "", "Path to write the generated image config YAML (env: AIRGAPPER_HELM_IMAGES_OUTPUT)")
+	cmd.Flags().String("target-credentials-ref", "", "Name of a helm credential entry, its Name field is used as destination registry (env: AIRGAPPER_HELM_IMAGES_TARGET_CREDENTIALS_REF)")
 
 	return cmd
 }
 
 func runHelmImages(cmd *cobra.Command, _ []string) error {
-	configPath := viper.GetString("config")
-	credsPath := viper.GetString("credentials")
-	debug := viper.GetBool("debug")
-	logFormat := viper.GetString("log_format")
-	targetCredRef := viper.GetString("helm_images_target_credentials_ref")
-	outputPath := viper.GetString("helm_images_output")
+	configPath := stringFlag(cmd, "config", "CONFIG")
+	credsPath := stringFlag(cmd, "credentials", "CREDENTIALS")
+	logFormat := stringFlag(cmd, "log-format", "LOG_FORMAT")
+	targetCredRef := stringFlag(cmd, "target-credentials-ref", "HELM_IMAGES_TARGET_CREDENTIALS_REF")
+	outputPath := stringFlag(cmd, "output", "HELM_IMAGES_OUTPUT")
+
+	debug, err := boolFlag(cmd, "debug", "DEBUG")
+	if err != nil {
+		return err
+	}
 
 	logger := logging.NewLogger(debug, logFormat)
 
@@ -86,8 +84,14 @@ func runHelmImages(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	ctx, cancel, err := withRunTimeout(cmd)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
 	extractor := helmimages.New(logger)
-	entries, skipped, err := extractor.Extract(cmd.Context(), helmResources, credStore)
+	entries, skipped, err := extractor.Extract(ctx, helmResources, credStore)
 	if err != nil {
 		return fmt.Errorf("extract images: %w", err)
 	}

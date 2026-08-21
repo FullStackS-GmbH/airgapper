@@ -12,12 +12,9 @@ import (
 // FileStore is a credential store backed by an in-memory list of credentials
 // loaded from YAML files. It implements domain.CredentialStore.
 type FileStore struct {
-	// credentials is the flat list of all loaded credentials.
-	credentials []domain.Credential
-
 	// byKey indexes credentials by name and type for fast lookups. The same
 	// name may legitimately be used for image and Helm registry credentials.
-	byKey map[credentialKey]*domain.Credential
+	byKey map[credentialKey]domain.Credential
 }
 
 type credentialKey struct {
@@ -33,15 +30,9 @@ var _ domain.CredentialStore = (*FileStore)(nil)
 // with the same name and type are detected, a warning is logged via slog and
 // the last entry wins.
 func NewFileStore(creds []domain.Credential) *FileStore {
-	fs := &FileStore{
-		credentials: make([]domain.Credential, len(creds)),
-		byKey:       make(map[credentialKey]*domain.Credential, len(creds)),
-	}
+	fs := &FileStore{byKey: make(map[credentialKey]domain.Credential, len(creds))}
 
-	copy(fs.credentials, creds)
-
-	for i := range fs.credentials {
-		c := &fs.credentials[i]
+	for _, c := range creds {
 		key := credentialKey{name: c.Name, credType: c.Type}
 		if _, exists := fs.byKey[key]; exists {
 			slog.Warn("duplicate credential; previous entry will be overwritten",
@@ -63,7 +54,11 @@ func NewFileStore(creds []domain.Credential) *FileStore {
 // Returns (nil, nil) if no matching credential is found, indicating that
 // anonymous access should be used.
 func (fs *FileStore) Resolve(host string, credType domain.CredentialType) (*domain.Credential, error) {
-	return fs.byKey[credentialKey{name: host, credType: credType}], nil
+	c, ok := fs.byKey[credentialKey{name: host, credType: credType}]
+	if !ok {
+		return nil, nil
+	}
+	return &c, nil
 }
 
 // ResolveByRef looks up a credential by its exact reference name and type, as
@@ -77,5 +72,5 @@ func (fs *FileStore) ResolveByRef(ref string, credType domain.CredentialType) (*
 	if !ok {
 		return nil, fmt.Errorf("%s credential %q: %w", credType, ref, domain.ErrCredentialNotFound)
 	}
-	return c, nil
+	return &c, nil
 }

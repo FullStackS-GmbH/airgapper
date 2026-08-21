@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -17,6 +19,22 @@ const (
 	maxLegacyIndexSize  = 50 << 20
 	maxChartArchiveSize = 512 << 20
 )
+
+// legacyHTTPClient bounds every legacy-repo request. http.DefaultClient has no
+// timeouts at all, so a half-open connection to a chart repository hangs the
+// run forever — --timeout is optional and often unset. The limits are on
+// connection setup and time-to-first-byte rather than total duration, so a
+// large chart on a slow air-gap link still downloads.
+var legacyHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 60 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+	},
+}
 
 type legacyIndex struct {
 	Entries map[string][]legacyChartVersion `yaml:"entries"`
@@ -153,15 +171,11 @@ func httpGet(ctx context.Context, rawURL string, creds *domain.Credential, limit
 		req.SetBasicAuth(creds.Username, creds.Password)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := legacyHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			_ = closeErr
-		}
-	}()
+	defer func() { _ = resp.Body.Close() }()
 
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:

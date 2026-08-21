@@ -15,7 +15,14 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	airtransport "github.com/fullstacks-gmbh/airgapper/internal/transport"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/registry"
 )
+
+// azureReposAuthSentinel is a magic username signalling the Azure Repos HTTPS
+// workaround: the credential's Password field holds the name of an environment
+// variable that contains the actual Authorization value.
+const azureReposAuthSentinel = "AzureReposAuthnSucks"
 
 // Transporter handles synchronization of Git repositories between remotes. It
 // supports HTTPS (with basic auth), SSH (with key files), and Azure Repos
@@ -37,24 +44,15 @@ func (t *Transporter) Type() domain.ResourceType {
 // Sync copies Git refs from source to destination for each ref listed in the
 // resource. It respects the PushMode and DryRun settings.
 func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts domain.SyncOptions) (*domain.SyncResult, error) {
-	result := &domain.SyncResult{Resource: resource}
 	logger := opts.Logger
 	if logger == nil {
 		logger = t.logger
 	}
 
-	for _, ref := range resource.Versions {
-		vr, ops := t.syncRef(ctx, resource, ref, opts, logger)
-		result.Operations = append(result.Operations, ops...)
-		switch vr.Status {
-		case domain.SyncStatusSynced:
-			result.Synced = append(result.Synced, vr)
-		case domain.SyncStatusSkipped:
-			result.Skipped = append(result.Skipped, vr)
-		case domain.SyncStatusFailed:
-			result.Failed = append(result.Failed, vr)
-		}
-	}
+	result := airtransport.SyncVersions(resource.Versions, func(ref string) (domain.VersionResult, []domain.OperationRecord) {
+		return t.syncRef(ctx, resource, ref, opts, logger)
+	})
+	result.Resource = resource
 
 	return result, nil
 }
@@ -75,13 +73,13 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 	}
 
 	// Resolve credentials.
-	srcCred, err := resolveCredentials(resource.SourceCredentialsRef, resource.Source, domain.CredentialTypeGit, opts.Credentials)
+	srcCred, err := registry.ResolveCredentials(resource.SourceCredentialsRef, gitHost(resource.Source), domain.CredentialTypeGit, opts.Credentials)
 	if err != nil {
 		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve source credentials: %w", err)},
 			[]domain.OperationRecord{op(domain.OpFail, "resolve source credentials: "+err.Error())}
 	}
 
-	dstCred, err := resolveCredentials(resource.TargetCredentialsRef, resource.Destination, domain.CredentialTypeGit, opts.Credentials)
+	dstCred, err := registry.ResolveCredentials(resource.TargetCredentialsRef, gitHost(resource.Destination), domain.CredentialTypeGit, opts.Credentials)
 	if err != nil {
 		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("resolve target credentials: %w", err)},
 			[]domain.OperationRecord{op(domain.OpFail, "resolve target credentials: "+err.Error())}
@@ -95,7 +93,7 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 
 	// Dry-run mode: report what would happen without mutating.
 	if opts.DryRun {
-		return t.dryRunResult(resource, ref, exists, logger, op)
+		return airtransport.DryRunResult(resource.PushMode, ref, exists, logger, op)
 	}
 
 	if exists && resource.PushMode == domain.PushModeSkip {
@@ -158,7 +156,7 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 		RemoteName: "target",
 		RefSpecs:   []config.RefSpec{refSpec},
 		Auth:       dstAuth,
-		Force:      resource.PushMode == domain.PushModeForce || resource.PushMode == domain.PushModeOverwrite,
+		Force:      resource.PushMode == domain.PushModeForce,
 	}
 
 	if err := repo.PushContext(ctx, pushOpts); err != nil {
@@ -171,34 +169,12 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 
 	var ops []domain.OperationRecord
 	ops = append(ops, op(domain.OpPull, "cloned from source"))
-	if exists && (resource.PushMode == domain.PushModeForce || resource.PushMode == domain.PushModeOverwrite) {
-		ops = append(ops, op(domain.OpForce, "force pushed (overwritten)"))
+	if exists && resource.PushMode == domain.PushModeForce {
+		ops = append(ops, op(domain.OpOverwrite, "force pushed (overwritten)"))
 	} else {
 		ops = append(ops, op(domain.OpPush, "pushed to destination"))
 	}
 	return domain.VersionResult{Version: ref, Status: domain.SyncStatusSynced, Message: "pushed"}, ops
-}
-
-// dryRunResult returns the appropriate dry-run result based on existence and push mode.
-func (t *Transporter) dryRunResult(resource domain.Resource, ref string, exists bool, logger *slog.Logger, op func(domain.OperationType, string) domain.OperationRecord) (domain.VersionResult, []domain.OperationRecord) {
-	var msg string
-	var opRec domain.OperationRecord
-
-	switch {
-	case exists && resource.PushMode == domain.PushModeSkip:
-		msg = "dry-run: would skip (already exists)"
-		opRec = op(domain.OpSkip, msg)
-	case exists:
-		msg = "dry-run: would overwrite (already exists)"
-		opRec = op(domain.OpForce, msg)
-	default:
-		msg = "dry-run: would sync"
-		opRec = op(domain.OpPush, msg)
-	}
-
-	logger.Info(msg)
-	return domain.VersionResult{Version: ref, Status: domain.SyncStatusSkipped, Message: msg},
-		[]domain.OperationRecord{opRec}
 }
 
 // Exists checks whether a specific ref exists at the given endpoint by listing
@@ -275,7 +251,7 @@ func credToTransportAuth(cred *domain.Credential) (transport.AuthMethod, error) 
 
 	// Azure Repos workaround: the Password field is an environment variable
 	// name that contains the actual auth token / header value.
-	if cred.Username == "AzureReposAuthnSucks" {
+	if cred.Username == azureReposAuthSentinel {
 		envVal := os.Getenv(cred.Password)
 		return &http.BasicAuth{
 			Username: cred.Username,
@@ -290,33 +266,11 @@ func credToTransportAuth(cred *domain.Credential) (transport.AuthMethod, error) 
 	}, nil
 }
 
-// resolveCredentials resolves credentials for an endpoint. If credRef is
-// non-empty, it uses ResolveByRef. Otherwise, it falls back to Resolve using
-// the endpoint registry as the host. A nil store or no matching credential
-// results in nil (anonymous access).
-func resolveCredentials(credRef string, endpoint domain.Endpoint, credType domain.CredentialType, store domain.CredentialStore) (*domain.Credential, error) {
-	if store == nil {
-		return nil, nil
+// gitHost returns the lookup key for host-based credential resolution. For git
+// the Registry field is typically empty, so it falls back to the Repository URL.
+func gitHost(endpoint domain.Endpoint) string {
+	if endpoint.Registry != "" {
+		return endpoint.Registry
 	}
-
-	if credRef != "" {
-		cred, err := store.ResolveByRef(credRef, credType)
-		if err != nil {
-			return nil, fmt.Errorf("resolve credential ref %q: %w", credRef, err)
-		}
-		return cred, nil
-	}
-
-	// For git, the "host" is typically the Registry field, but may be empty.
-	// Fall back to the Repository URL if Registry is not set.
-	host := endpoint.Registry
-	if host == "" {
-		host = endpoint.Repository
-	}
-
-	cred, err := store.Resolve(host, credType)
-	if err != nil {
-		return nil, fmt.Errorf("resolve credential for host %q: %w", host, err)
-	}
-	return cred, nil
+	return endpoint.Repository
 }

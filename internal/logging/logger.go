@@ -29,14 +29,3 @@ func NewLogger(debug bool, format string) *slog.Logger {
 
 	return slog.New(handler)
 }
-
-// WithResource returns a child logger enriched with resource context
-// attributes. This makes it easy to correlate log entries with the specific
-// resource being processed.
-func WithResource(logger *slog.Logger, resourceType, source, destination string) *slog.Logger {
-	return logger.With(
-		slog.String("resource_type", resourceType),
-		slog.String("source", source),
-		slog.String("destination", destination),
-	)
-}

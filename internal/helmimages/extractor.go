@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/name"
+	"go.podman.io/image/v5/docker/reference"
 	"gopkg.in/yaml.v3"
 	"helm.sh/helm/v4/pkg/chart/common"
 	chartutil "helm.sh/helm/v4/pkg/chart/common/util"
@@ -150,29 +150,26 @@ func (e *Extractor) Extract(ctx context.Context, resources []domain.Resource, cr
 
 // ParseImageRef parses an image reference string into registry, repository, and
 // tag. Docker Hub short names are expanded: "nginx" → docker.io, library/nginx,
-// latest. Returns empty tag for digest references.
+// latest. Returns empty tag for digest references (which cannot be mirrored by
+// tag), signalling the caller to skip them.
 func ParseImageRef(ref string) (registry, repository, tag string) {
-	parsed, err := name.ParseReference(strings.TrimSpace(ref))
+	named, err := reference.ParseNormalizedNamed(strings.TrimSpace(ref))
 	if err != nil {
 		return "", ref, ""
 	}
-	registry = normalizeDockerRegistry(parsed.Context().RegistryStr())
-	repository = parsed.Context().RepositoryStr()
-	tagged, ok := parsed.(name.Tag)
-	if !ok {
+	registry = reference.Domain(named)
+	repository = reference.Path(named)
+
+	// Digest-pinned references cannot be mirrored by tag; skip them.
+	if _, isCanonical := named.(reference.Canonical); isCanonical {
 		return registry, repository, ""
 	}
-	tag = tagged.TagStr()
-	return registry, repository, tag
-}
 
-// normalizeDockerRegistry maps go-containerregistry's internal Docker Hub
-// hostname back to the canonical "docker.io".
-func normalizeDockerRegistry(reg string) string {
-	if reg == "index.docker.io" {
-		return "docker.io"
+	// TagNameOnly defaults an untagged reference to ":latest".
+	if tagged, ok := reference.TagNameOnly(named).(reference.Tagged); ok {
+		return registry, repository, tagged.Tag()
 	}
-	return reg
+	return registry, repository, ""
 }
 
 // ExtractImagesFromYAML walks all YAML documents in content and returns the

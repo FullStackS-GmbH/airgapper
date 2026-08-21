@@ -272,6 +272,9 @@ airgapper version         Print version, commit, and build date
 | `--credentials` |       | `AIRGAPPER_CREDENTIALS` | (none)  | Path to credentials file or folder       |
 | `--debug`       | `-d`  | `AIRGAPPER_DEBUG`       | `false` | Enable debug logging (JSON, DEBUG level) |
 | `--dry-run`     |       | `AIRGAPPER_DRY_RUN`     | `false` | Disable all write/push operations        |
+| `--log-format`  |       | `AIRGAPPER_LOG_FORMAT`  | `json`  | Log format: `json` or `text`             |
+| `--dry-run-log` |       | `AIRGAPPER_DRY_RUN_LOG` | (auto)  | Path for the dry-run log file            |
+| `--timeout`     |       | `AIRGAPPER_TIMEOUT`     | `0`     | Overall run timeout in seconds (0 = off) |
 
 ### `helm images` Flags
 
@@ -435,7 +438,7 @@ include:
 
 ## Architecture Overview
 
-Universal Airgapper follows **Hexagonal Architecture (Ports & Adapters)** with the Strategy and Factory patterns for pluggable transport backends.
+Universal Airgapper follows **Hexagonal Architecture (Ports & Adapters)** with the Strategy pattern for pluggable transport backends.
 
 ```
 cmd/airgapper/main.go        # Thin entrypoint

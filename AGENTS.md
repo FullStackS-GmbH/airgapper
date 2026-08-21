@@ -8,7 +8,7 @@ Universal Airgapper is a CLI tool for synchronizing artifacts (container images,
 
 - **Pattern**: Hexagonal Architecture (Ports & Adapters) with Strategy pattern for pluggable transports.
 - **Core domain** (`internal/domain/`): Pure business types, interfaces, and errors. Zero external dependencies. Dependencies always point inward — adapters import domain, never the reverse.
-- **Inbound ports**: CLI commands (cobra), config file parsing (viper).
+- **Inbound ports**: CLI commands (cobra), config file parsing (gopkg.in/yaml.v3).
 - **Outbound ports**: `Transporter` interface (image, helm, git), `Scanner` interface, `CredentialStore` interface.
 - **Outbound adapters**: Concrete implementations in `internal/transport/image/`, `internal/transport/helm/`, `internal/transport/git/`, `internal/scanner/`.
 - Refer to `docs/architecture/` for the full C4 model and design documentation.
@@ -19,9 +19,9 @@ Universal Airgapper is a CLI tool for synchronizing artifacts (container images,
 cmd/airgapper/main.go        # Thin entrypoint — wires dependencies, calls root command
 internal/
   domain/                     # Shared types, interfaces, sentinel errors
-  config/                     # Viper-based config loading, validation, merging
+  config/                     # YAML config loading, validation, merging
   credentials/                # Credential store: file-based loading and resolution
-  transport/                  # Transporter interface + factory/registry
+  transport/                  # Shared transporter helpers (version loop, dry-run)
     image/                    # Container image sync (containers/image v5)
     helm/                     # Helm chart sync (Helm v4 SDK)
     git/                      # Git repo sync (go-git/go-git v5)
@@ -43,7 +43,7 @@ internal/
 | Concern | Library                          | Notes                                 |
 |---------|----------------------------------|---------------------------------------|
 | CLI     | `github.com/spf13/cobra`         | Subcommand-based CLI                  |
-| Config  | `github.com/spf13/viper`         | YAML config + env vars + flags        |
+| Config  | `gopkg.in/yaml.v3`               | YAML config parsing                   |
 | Git     | `github.com/go-git/go-git/v5`    | Pure-Go git operations                |
 | Helm    | `helm.sh/helm/v4/pkg/action`     | Official Helm v4 SDK                  |
 | Images  | `go.podman.io/image/v5`        | Same engine family as skopeo/podman       |
@@ -77,10 +77,10 @@ internal/
 - For richer errors, define custom types implementing `error` with `errors.Is`/`errors.As` support.
 - Log at the top of the call stack (usually `cmd/`); lower packages return errors, they don't log them.
 
-## CLI Design (cobra + viper)
+## CLI Design (cobra)
 
 - Subcommands are verbs: `airgapper sync`, `airgapper helm images`, `airgapper version`.
-- Global flags: `--config` (config file/folder), `--credentials` (credentials file/folder), `--debug`, `--dry-run`.
+- Global flags: `--config` (config file/folder), `--credentials` (credentials file/folder), `--debug`, `--dry-run`, `--log-format` (`json`/`text`), `--dry-run-log` (path), `--timeout` (seconds; 0 = off).
 - Every flag has a short description, sensible default, and env-var override (`AIRGAPPER_` prefix).
 - Exit codes: `0` success, `1` general error, `2` usage/config error.
 - `--dry-run` disables all write/push operations globally.
@@ -92,7 +92,7 @@ internal/
 - Config files: `*.airgapper.yaml` / `*.airgapper.yml` in a folder, merged at load time.
 - Validate configuration early at startup; fail fast with clear messages.
 - Never log secrets. Mask credentials in any debug or error output.
-- Use `viper.AutomaticEnv()` with prefix `AIRGAPPER_` for env-var binding.
+- Read env-var overrides via the `stringFlag`/`boolFlag`/`intFlag` helpers in `internal/cli/root.go`, which take an explicit `AIRGAPPER_`-prefixed name per flag.
 - Support regex patterns for image tags, chart versions, and git refs.
 
 ## Credential Management
@@ -106,8 +106,8 @@ internal/
 ## Transport Layer
 
 - All transports implement the same `Transporter` interface: `Sync(ctx, resource, creds) (*SyncResult, error)`.
-- Factory pattern selects the correct transporter based on resource type.
-- Each transport handles: existence checking, pulling, pushing, and push-mode logic (skip/force/overwrite).
+- The sync engine holds a `map[ResourceType]Transporter` and selects by resource type.
+- Each transport handles: existence checking, pulling, pushing, and push-mode logic (skip/force; `overwrite` in YAML is an alias for force).
 - Image transport uses `go.podman.io/image/v5` copy mechanics for pull, push, and tag listing.
 - Helm transport uses Helm v4 SDK for OCI and traditional repos.
 - Git transport uses `go-git/go-git/v5` for clone/push with HTTPS and SSH support.

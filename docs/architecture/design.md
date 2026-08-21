@@ -74,8 +74,8 @@ Layer 3 (Domain) depends on nothing. Layer 4 (Infrastructure) implements interfa
 
 **Components**:
 
-- `root.go` - Root cobra command. Defines global persistent flags: `--config`, `--credentials`, `--debug`, `--dry-run`. Binds flags to viper. Initializes logging.
-- `sync.go` - `sync` subcommand. Loads config, creates credential store, builds transporter factory, creates sync engine, runs engine, prints results, returns exit code.
+- `root.go` - Root cobra command. Defines global persistent flags: `--config`, `--credentials`, `--debug`, `--dry-run`, `--log-format`, `--dry-run-log`, `--timeout`. Resolves each flag against its `AIRGAPPER_*` environment variable (explicit flag wins). Initializes logging. Provides `withRunTimeout`, which bounds a command's context by `--timeout` (0 = no timeout).
+- `sync.go` - `sync` subcommand. Loads config, creates credential store, constructs the transporters, creates sync engine, runs engine, prints results, returns exit code.
 - `helm.go` - `helm` subcommand group. Parent command for Helm-related utilities.
 - `helm_images.go` - `helm images` subcommand. Pulls and renders Helm charts, extracts image references, writes an airgapper image config YAML ready for `airgapper sync`.
 - `version.go` - `version` subcommand. Prints version, commit SHA, build date (injected via ldflags).
@@ -94,7 +94,7 @@ Layer 3 (Domain) depends on nothing. Layer 4 (Infrastructure) implements interfa
 
 **Components**:
 
-- `loader.go` - Discovers `*.airgapper.yaml` / `*.airgapper.yml` files in the config folder. Merges multiple files by appending resource lists. Uses viper for YAML parsing.
+- `loader.go` - Discovers `*.airgapper.yaml` / `*.airgapper.yml` files in the config folder. Merges multiple files by appending resource lists. Uses `gopkg.in/yaml.v3` for parsing.
 - `types.go` - Typed Go structs for config file content (mirrors the YAML schema).
 - `validate.go` - Validates the merged config: required fields, valid enum values, valid regex patterns, no conflicting settings.
 
@@ -130,7 +130,7 @@ Layer 3 (Domain) depends on nothing. Layer 4 (Infrastructure) implements interfa
 
 ```
 For each resource:
-  1. Select transporter by resource type (factory lookup)
+  1. Select transporter by resource type (engine map lookup)
   2. Expand version patterns (regex matching against remote)
   3. For each version:
      a. Check if version exists at destination (transporter.Exists())
@@ -150,7 +150,8 @@ For each resource:
 
 **Sub-packages**:
 
-- `factory.go` - Transport factory with registered constructors.
+- `versions.go` - Helpers shared by every transporter: `SyncVersions` (per-version loop, buckets results by status) and `DryRunResult`.
+- `registry/` - Shared containers/image helpers: reference parsing, system context, credential resolution, signature policy.
 - `image/` - Container image transporter.
 - `helm/` - Helm chart transporter.
 - `git/` - Git repository transporter.
@@ -269,7 +270,7 @@ type CredentialStore interface {
 User runs: airgapper sync --config ./configs/ --credentials ./creds/
 
 1. CLI Layer
-   ├─ Parse flags, bind to viper
+   ├─ Parse flags, fall back to AIRGAPPER_* env vars
    ├─ Initialize slog (JSON, level from --debug)
    ├─ config.Load("./configs/")
    │   ├─ Discover *.airgapper.yaml files
@@ -278,16 +279,14 @@ User runs: airgapper sync --config ./configs/ --credentials ./creds/
    ├─ credentials.NewFileStore("./creds/")
    │   ├─ Load credential YAML files
    │   └─ Index by name and type
-   ├─ transport.NewFactory(logger)
-   │   ├─ Register image.New()
-   │   ├─ Register helm.New()
-   │   └─ Register git.New()
+   ├─ []domain.Transporter{image.New(), helm.New(), git.New()}
    ├─ scanner.NewFromConfig(config.Scanners)
-   └─ sync.NewEngine(factory, scanners, logger)
+   └─ sync.NewEngine(transporters, scanners, logger)
+       └─ Index transporters by Type() → map[ResourceType]Transporter
 
 2. Sync Engine
    ├─ For each resource (concurrently via errgroup):
-   │   ├─ factory.ForType(resource.Type) → transporter
+   │   ├─ transporters[resource.Type] → transporter
    │   ├─ Expand version patterns:
    │   │   ├─ transporter.ListVersions(source) → all versions
    │   │   └─ Filter by regex patterns → expanded versions
@@ -776,6 +775,9 @@ Global flags:
   --credentials      Path to credentials file or folder (env: AIRGAPPER_CREDENTIALS)
   --debug, -d        Enable debug logging (env: AIRGAPPER_DEBUG)
   --dry-run          Disable all write/push operations (env: AIRGAPPER_DRY_RUN)
+  --log-format       Log format: json or text (env: AIRGAPPER_LOG_FORMAT)
+  --dry-run-log      Path for the dry-run log file (env: AIRGAPPER_DRY_RUN_LOG)
+  --timeout          Overall run timeout in seconds, 0 = off (env: AIRGAPPER_TIMEOUT)
   --help, -h         Help for airgapper
 ```
 
@@ -878,8 +880,8 @@ universal-airgapper-golang/
 │   │   ├── store_test.go
 │   │   └── testdata/
 │   ├── transport/
-│   │   ├── factory.go               # Transport factory + registry
-│   │   ├── factory_test.go
+│   │   ├── versions.go              # Shared version loop + dry-run result
+│   │   ├── versions_test.go
 │   │   ├── image/
 │   │   │   ├── transporter.go       # Image sync via containers/image v5
 │   │   │   ├── parse.go             # Image name parsing
