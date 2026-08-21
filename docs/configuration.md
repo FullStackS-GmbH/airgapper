@@ -62,6 +62,15 @@ The type `docker` is accepted as an alias for `image`.
 | `scanner_ref`             | no        | Name of a scanner to run before push                                        |
 | `source_credentials_ref`  | no        | Name of a credential entry for the source                                   |
 | `target_credentials_ref`  | no        | Name of a credential entry for the destination                              |
+| `source_insecure`         | no        | Skip TLS verification against the source registry (default: `false`)        |
+| `destination_insecure`    | no        | Skip TLS verification against the destination registry (default: `false`)   |
+| `source_ca_cert`          | no        | Directory containing a `ca.crt` trusted for the source registry             |
+| `destination_ca_cert`     | no        | Directory containing a `ca.crt` trusted for the destination registry        |
+
+Prefer `*_ca_cert` over `*_insecure` when the destination uses a private or
+self-signed CA: it trusts that CA specifically instead of disabling
+verification for the whole connection. `*_insecure` takes precedence when
+both are set on the same endpoint.
 
 **Image name resolution** follows Docker conventions:
 
@@ -88,18 +97,25 @@ resources:
 
 Sync Helm charts between OCI registries and legacy HTTP chart repositories.
 
-| Field                     | Required  | Description                                                        |
-| ------------------------- | --------- | ------------------------------------------------------------------ |
-| `type`                    | yes       | `helm`                                                             |
-| `source_registry`         | yes       | Source registry hostname                                           |
-| `source_chart`            | yes       | Chart name within source registry (e.g., `bitnamicharts/mariadb`)  |
-| `destination_registry`    | yes       | Destination registry hostname                                      |
-| `destination_repo`        | yes       | Repository path in destination registry                            |
-| `destination_chart`       | no        | Override the destination chart name and chart metadata             |
-| `versions`                | yes       | List of chart versions to sync (supports regex patterns)           |
-| `push_mode`               | no        | `skip` (default) or `overwrite`                                    |
-| `source_credentials_ref`  | no        | Name of a credential entry for the source                          |
-| `target_credentials_ref`  | no        | Name of a credential entry for the destination                     |
+| Field                     | Required  | Description                                                                |
+| ------------------------- | --------- | -------------------------------------------------------------------------- |
+| `type`                    | yes       | `helm`                                                                     |
+| `source_registry`         | yes       | Source registry hostname                                                   |
+| `source_chart`            | yes       | Chart name within source registry (e.g., `bitnamicharts/mariadb`)          |
+| `destination_registry`    | yes       | Destination registry hostname                                              |
+| `destination_repo`        | yes       | Repository path in destination registry                                    |
+| `destination_chart`       | no        | Override the destination chart name and chart metadata                     |
+| `versions`                | yes       | List of chart versions to sync (supports regex patterns)                   |
+| `push_mode`               | no        | `skip` (default) or `overwrite`                                            |
+| `source_credentials_ref`  | no        | Name of a credential entry for the source                                  |
+| `target_credentials_ref`  | no        | Name of a credential entry for the destination                             |
+| `source_insecure`         | no        | Skip TLS verification against the source registry (default: `false`)       |
+| `destination_insecure`    | no        | Skip TLS verification against the destination registry (default: `false`)  |
+| `source_ca_cert`          | no        | Directory containing a `ca.crt` trusted for the source registry            |
+| `destination_ca_cert`     | no        | Directory containing a `ca.crt` trusted for the destination registry       |
+
+Same `*_ca_cert` / `*_insecure` semantics as image resources (see above)
+apply here, including to the legacy HTTP chart repository path.
 
 ```yaml
 resources:

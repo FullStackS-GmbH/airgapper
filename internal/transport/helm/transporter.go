@@ -91,7 +91,7 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 	if IsOCIRegistry(resource.Source.Registry) {
 		// Source and destination use separate clients because Helm's Login
 		// installs a host-scoped credential callback on the client.
-		sourceClient, err := newRegistryClient(resource.Source.Registry, "")
+		sourceClient, err := newRegistryClient(resource.Source, domain.Endpoint{})
 		if err != nil {
 			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create source registry client: %w", err)},
 				[]domain.OperationRecord{op(domain.OpFail, "create source registry client: "+err.Error())}
@@ -154,7 +154,7 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
 	}
 
-	destinationClient, err := newRegistryClient("", resource.Destination.Registry)
+	destinationClient, err := newRegistryClient(domain.Endpoint{}, resource.Destination)
 	if err != nil {
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create destination registry client: %w", err)},
 			[]domain.OperationRecord{op(domain.OpFail, "create destination registry client: "+err.Error())}
@@ -202,7 +202,7 @@ func (t *Transporter) PullChartBytes(ctx context.Context, resource domain.Resour
 		return data, err
 	}
 
-	client, err := newRegistryClient(resource.Source.Registry, "")
+	client, err := newRegistryClient(resource.Source, domain.Endpoint{})
 	if err != nil {
 		return nil, fmt.Errorf("create registry client: %w", err)
 	}
@@ -238,7 +238,7 @@ func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, vers
 		return false, fmt.Errorf("parse reference %q: %w", refStr, err)
 	}
 
-	return transportregistry.ManifestExists(ctx, transportregistry.SystemContext(creds, false), ref, t.logger)
+	return transportregistry.ManifestExists(ctx, transportregistry.SystemContext(creds, endpoint.Insecure, endpoint.CACertPath), ref, t.logger)
 }
 
 // ListVersions returns all available versions for a chart at the given
@@ -255,7 +255,7 @@ func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint
 		return nil, fmt.Errorf("parse repo %q: %w", repo, err)
 	}
 
-	sys := transportregistry.SystemContext(creds, false)
+	sys := transportregistry.SystemContext(creds, endpoint.Insecure, endpoint.CACertPath)
 	tags, err := docker.GetRepositoryTags(ctx, sys, ref)
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %q: %w", repo, err)
@@ -268,9 +268,22 @@ func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint
 	return tags, nil
 }
 
-func newRegistryClient(sourceRegistry, destinationRegistry string) (*registry.Client, error) {
-	if (IsOCIRegistry(sourceRegistry) && needsPlainHTTP(sourceRegistry)) || needsPlainHTTP(destinationRegistry) {
+func newRegistryClient(source, destination domain.Endpoint) (*registry.Client, error) {
+	if (IsOCIRegistry(source.Registry) && needsPlainHTTP(source.Registry)) || needsPlainHTTP(destination.Registry) {
 		return registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptPlainHTTP())
+	}
+	if source.Insecure || destination.Insecure {
+		return registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptHTTPClient(insecureHTTPClient))
+	}
+	if certDir := source.CACertPath; certDir != "" || destination.CACertPath != "" {
+		if certDir == "" {
+			certDir = destination.CACertPath
+		}
+		client, err := caCertHTTPClient(certDir)
+		if err != nil {
+			return nil, fmt.Errorf("configure registry client CA cert: %w", err)
+		}
+		return registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptHTTPClient(client))
 	}
 	return registry.NewClient(registry.ClientOptWriter(io.Discard))
 }

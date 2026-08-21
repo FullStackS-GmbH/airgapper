@@ -111,8 +111,8 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 
 	logger.Info("copying image")
 	_, err = copy.Image(ctx, policyCtx, dstRef, srcRef, &copy.Options{
-		SourceCtx:          registry.SystemContext(srcCred, false),
-		DestinationCtx:     registry.SystemContext(dstCred, false),
+		SourceCtx:          registry.SystemContext(srcCred, resource.Source.Insecure, resource.Source.CACertPath),
+		DestinationCtx:     registry.SystemContext(dstCred, resource.Destination.Insecure, resource.Destination.CACertPath),
 		ImageListSelection: copy.CopyAllImages,
 		ReportWriter:       io.Discard,
 	})
@@ -144,7 +144,7 @@ func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, vers
 		return false, fmt.Errorf("parse reference %q: %w", refStr, err)
 	}
 
-	return registry.ManifestExists(ctx, registry.SystemContext(creds, false), ref, t.logger)
+	return registry.ManifestExists(ctx, registry.SystemContext(creds, endpoint.Insecure, endpoint.CACertPath), ref, t.logger)
 }
 
 // ListVersions returns all tags available at the given endpoint.
@@ -155,7 +155,7 @@ func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint
 		return nil, fmt.Errorf("parse repo %q: %w", repo, err)
 	}
 
-	sys := registry.SystemContext(creds, false)
+	sys := registry.SystemContext(creds, endpoint.Insecure, endpoint.CACertPath)
 	tags, err := docker.GetRepositoryTags(ctx, sys, ref)
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %q: %w", repo, err)

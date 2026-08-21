@@ -3,9 +3,54 @@
 package helm
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 )
+
+// insecureHTTPClient skips TLS certificate verification for OCI registry
+// clients whose endpoint was explicitly marked insecure. Shared across
+// requests like legacyHTTPClient in legacy.go.
+var insecureHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // explicit opt-in via endpoint.Insecure
+	},
+}
+
+// caCertHTTPClient builds an *http.Client that trusts the "ca.crt" file
+// inside certDir in addition to the system pool, following Docker's
+// host-cert-directory convention.
+func caCertHTTPClient(certDir string) (*http.Client, error) {
+	pool, err := caCertPool(certDir)
+	if err != nil {
+		return nil, err
+	}
+	return &http.Client{
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}},
+	}, nil
+}
+
+// caCertPool loads the system trust store and appends the "ca.crt" file
+// inside certDir to it.
+func caCertPool(certDir string) (*x509.CertPool, error) {
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	caPath := filepath.Join(certDir, "ca.crt")
+	pemData, err := os.ReadFile(caPath)
+	if err != nil {
+		return nil, fmt.Errorf("read CA cert %q: %w", caPath, err)
+	}
+	if !pool.AppendCertsFromPEM(pemData) {
+		return nil, fmt.Errorf("no valid certificates found in %q", caPath)
+	}
+	return pool, nil
+}
 
 // knownOCIHosts lists registry hostnames that are known to be OCI-compliant.
 // These registries support the OCI distribution spec and can store Helm charts
