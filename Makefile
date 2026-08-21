@@ -9,7 +9,11 @@ IMAGE   ?= ghcr.io/fullstacks-gmbh/airgapper
 # Build tags required by go.podman.io/image/v5 (containers/container-libs):
 #   containers_image_openpgp         - skip gpgme CGO dep (we don't sign locally)
 #   exclude_graphdriver_btrfs/...    - skip storage backends (only docker:// transport is used)
-BUILD_TAGS := containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay
+#   http2legacy                      - keep x/net's own http2 impl on Go 1.27+; without it,
+#                                       x/net defers to the new stdlib http2 and grpc v1.80.0
+#                                       (via go-containerregistry) fails with "undefined:
+#                                       http2.TrailerPrefix". Drop once grpc catches up.
+BUILD_TAGS := containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay,http2legacy
 
 ## build: Build the binary for the current platform
 build:

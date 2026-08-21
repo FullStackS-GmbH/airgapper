@@ -14,6 +14,7 @@ builds:
       - exclude_graphdriver_btrfs
       - exclude_graphdriver_devicemapper
       - exclude_graphdriver_overlay
+      - http2legacy
     ldflags:
       - -s -w -X main.version={{ .Tag }} -X main.commit={{ .ShortCommit }} -X main.date={{ .Date }}
     goos:

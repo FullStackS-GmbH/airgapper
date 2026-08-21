@@ -12,7 +12,7 @@
 
   # Build tags required by go.podman.io/image/v5 (containers/container-libs).
   # Picked up by `go build`, `go test`, `go vet`, and golangci-lint via GOFLAGS.
-  env.GOFLAGS = "-tags=containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay";
+  env.GOFLAGS = "-tags=containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay,http2legacy";
   env.CGO_ENABLED = "0";
 
   # https://devenv.sh/packages/
