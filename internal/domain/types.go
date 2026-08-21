@@ -30,6 +30,12 @@ type Resource struct {
 	// ScannerRef is the optional name of a scanner to run before syncing.
 	ScannerRef string
 
+	// PolicyPath is the optional filesystem path to a containers/image
+	// signature verification policy (policy.json). Empty means accept any
+	// image unverified, preserving the pre-existing default. Image resources
+	// only; ignored for other resource types.
+	PolicyPath string
+
 	// SourceCredentialsRef is the optional name of the credential entry used
 	// to authenticate against the source.
 	SourceCredentialsRef string

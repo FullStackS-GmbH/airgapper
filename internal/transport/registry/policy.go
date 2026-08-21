@@ -26,3 +26,23 @@ func newPermissivePolicy() (*signature.PolicyContext, error) {
 func PermissivePolicyContext() (*signature.PolicyContext, error) {
 	return permissivePolicy, permissivePolicyErr
 }
+
+// PolicyContext returns a PolicyContext built from the signature verification
+// policy at policyPath (a containers/image policy.json — see
+// signature.Policy). An empty policyPath falls back to
+// PermissivePolicyContext, preserving today's default of accepting any image
+// unverified.
+func PolicyContext(policyPath string) (*signature.PolicyContext, error) {
+	if policyPath == "" {
+		return PermissivePolicyContext()
+	}
+	policy, err := signature.NewPolicyFromFile(policyPath)
+	if err != nil {
+		return nil, fmt.Errorf("load signature policy %q: %w", policyPath, err)
+	}
+	policyCtx, err := signature.NewPolicyContext(policy)
+	if err != nil {
+		return nil, fmt.Errorf("build policy context from %q: %w", policyPath, err)
+	}
+	return policyCtx, nil
+}

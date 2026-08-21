@@ -94,3 +94,36 @@ func TestResourceConfigToResource_IgnoresTLSOptionsForGit(t *testing.T) {
 	assert.Empty(t, got.Source.CACertPath)
 	assert.Empty(t, got.Destination.CACertPath)
 }
+
+func TestResourceConfigToResource_AppliesPolicyPathForImageOnly(t *testing.T) {
+	t.Parallel()
+
+	imageRC := config.ResourceConfig{
+		Type:        "image",
+		Source:      "registry.example.com/team/app",
+		Destination: "internal.example.com/mirror/app",
+		Tags:        []string{"v1"},
+		PolicyPath:  "/etc/airgapper/policy.json",
+	}
+	assert.Equal(t, "/etc/airgapper/policy.json", imageRC.ToResource().PolicyPath)
+
+	helmRC := config.ResourceConfig{
+		Type:                "helm",
+		SourceRegistry:      "registry.example.com",
+		SourceChart:         "team/app",
+		DestinationRegistry: "internal.example.com",
+		DestinationRepo:     "mirror",
+		Versions:            []string{"1.0.0"},
+		PolicyPath:          "/etc/airgapper/policy.json",
+	}
+	assert.Empty(t, helmRC.ToResource().PolicyPath)
+
+	gitRC := config.ResourceConfig{
+		Type:            "git",
+		SourceRepo:      "git@github.com:org/project.git",
+		DestinationRepo: "git@internal.example.com:mirror/project.git",
+		Refs:            []string{"main"},
+		PolicyPath:      "/etc/airgapper/policy.json",
+	}
+	assert.Empty(t, gitRC.ToResource().PolicyPath)
+}

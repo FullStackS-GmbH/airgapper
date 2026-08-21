@@ -52,25 +52,48 @@ resources:
 Sync container images between Docker v2-compatible registries.
 The type `docker` is accepted as an alias for `image`.
 
-| Field                     | Required  | Description                                                                 |
-| ------------------------- | --------- | --------------------------------------------------------------------------- |
-| `type`                    | yes       | `image` or `docker`                                                         |
-| `source`                  | yes       | Source image reference (e.g., `ubuntu`, `registry.example.com/repo/image`)  |
-| `destination`             | yes       | Destination image reference                                                 |
-| `tags`                    | yes       | List of tags to sync (supports regex patterns)                              |
-| `push_mode`               | no        | `skip` (default) or `force`                                                 |
-| `scanner_ref`             | no        | Name of a scanner to run before push                                        |
-| `source_credentials_ref`  | no        | Name of a credential entry for the source                                   |
-| `target_credentials_ref`  | no        | Name of a credential entry for the destination                              |
-| `source_insecure`         | no        | Skip TLS verification against the source registry (default: `false`)        |
-| `destination_insecure`    | no        | Skip TLS verification against the destination registry (default: `false`)   |
-| `source_ca_cert`          | no        | Directory containing a `ca.crt` trusted for the source registry             |
-| `destination_ca_cert`     | no        | Directory containing a `ca.crt` trusted for the destination registry        |
+| Field                     | Required  | Description                                                                       |
+| ------------------------- | --------- | --------------------------------------------------------------------------------- |
+| `type`                    | yes       | `image` or `docker`                                                               |
+| `source`                  | yes       | Source image reference (e.g., `ubuntu`, `registry.example.com/repo/image`)        |
+| `destination`             | yes       | Destination image reference                                                       |
+| `tags`                    | yes       | List of tags to sync (supports regex patterns)                                    |
+| `push_mode`               | no        | `skip` (default) or `force`                                                       |
+| `scanner_ref`             | no        | Name of a scanner to run before push                                              |
+| `source_credentials_ref`  | no        | Name of a credential entry for the source                                         |
+| `target_credentials_ref`  | no        | Name of a credential entry for the destination                                    |
+| `source_insecure`         | no        | Skip TLS verification against the source registry (default: `false`)              |
+| `destination_insecure`    | no        | Skip TLS verification against the destination registry (default: `false`)         |
+| `source_ca_cert`          | no        | Directory containing a `ca.crt` trusted for the source registry                   |
+| `destination_ca_cert`     | no        | Directory containing a `ca.crt` trusted for the destination registry              |
+| `policy_path`             | no        | Path to a signature verification policy.json; unset accepts any image unverified  |
 
 Prefer `*_ca_cert` over `*_insecure` when the destination uses a private or
 self-signed CA: it trusts that CA specifically instead of disabling
 verification for the whole connection. `*_insecure` takes precedence when
 both are set on the same endpoint.
+
+`policy_path` points at a containers/image signature verification policy
+(`policy.json`, the same format used by Skopeo/Podman — e.g. requiring a
+cosign/sigstore signature or a trusted GPG key). It is opt-in and off by
+default, matching the pre-existing behavior of accepting any image. A
+version whose signature fails verification is reported as failed, the same
+as a failed scan.
+
+For cosign/sigstore signatures, containers/image only looks up signature
+attachments for registries that enable them in `/etc/containers/registries.d/`
+(same as Skopeo/Podman). Enable them for the source registry, or every image
+fails with "a signature was required, but no signature exists". Enable them
+for the destination too, so the signature is copied along with the image:
+
+```yaml
+# /etc/containers/registries.d/airgapper.yaml
+docker:
+  registry.example.com:
+    use-sigstore-attachments: true
+  internal.example.com:
+    use-sigstore-attachments: true
+```
 
 **Image name resolution** follows Docker conventions:
 
@@ -90,7 +113,7 @@ resources:
     tags:
       - "v1.0.0"
       - "v1.0.1"
-      - "v2\\..*"         # Regex: matches all v2.x tags
+      - "v2\\..*" # Regex: matches all v2.x tags
 ```
 
 ### Helm (`type: helm`)
@@ -128,7 +151,7 @@ resources:
     push_mode: skip
     versions:
       - "16.0.0"
-      - "16\\..*"         # Regex: matches all 16.x versions
+      - "16\\..*" # Regex: matches all 16.x versions
 ```
 
 The destination OCI artifact name is taken from the pulled chart's `Chart.yaml`, so vendor artifacts whose repository basename differs from the real chart name are corrected automatically:
@@ -179,8 +202,8 @@ resources:
     target_credentials_ref: internal-git-ssh
     refs:
       - "main"
-      - "release/.*"      # Regex: all release branches
-      - "v[0-9]+\\..*"    # Regex: all version tags
+      - "release/.*" # Regex: all release branches
+      - "v[0-9]+\\..*" # Regex: all version tags
 ```
 
 ## Scanner Configuration

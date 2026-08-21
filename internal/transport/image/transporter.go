@@ -103,7 +103,7 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 			[]domain.OperationRecord{op(domain.OpFail, err.Error())}
 	}
 
-	policyCtx, err := registry.PermissivePolicyContext()
+	policyCtx, err := registry.PolicyContext(resource.PolicyPath)
 	if err != nil {
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: err},
 			[]domain.OperationRecord{op(domain.OpFail, err.Error())}

@@ -97,6 +97,12 @@ type ResourceConfig struct {
 	// version. Must match a ScannerConfig.Name if set.
 	ScannerRef string `yaml:"scanner_ref,omitempty"`
 
+	// PolicyPath is the optional path to a containers/image signature
+	// verification policy (policy.json) to check the source image against
+	// before pushing. Image resources only. Empty means accept any image
+	// unverified (the pre-existing default).
+	PolicyPath string `yaml:"policy_path,omitempty"`
+
 	// SourceCredentialsRef is the optional name of a credential entry for
 	// authenticating against the source.
 	SourceCredentialsRef string `yaml:"source_credentials_ref,omitempty"`
@@ -156,6 +162,7 @@ func (rc *ResourceConfig) ToResource() domain.Resource {
 		r.Source = parseImageEndpoint(rc.Source)
 		r.Destination = parseImageEndpoint(rc.Destination)
 		r.Versions = rc.Tags
+		r.PolicyPath = strings.TrimSpace(rc.PolicyPath)
 		rc.applyTLSOptions(&r.Source, &r.Destination)
 
 	case "helm":
