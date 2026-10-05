@@ -4,7 +4,8 @@ Universal Airgapper provides a reusable workflow that you can call from any GitH
 
 ## Reusable Workflow
 
-The workflow is located at `.github/workflows/universal-airgapper.yml` in this repository. It runs the airgapper container image, checks out your repository, writes credentials from a secret, and executes the sync.
+The workflow is located at `.github/workflows/universal-airgapper.yml` in this repository.
+It runs the airgapper container image, checks out your repository, writes credentials from a secret, and executes the sync.
 
 ## How to Use
 
@@ -32,23 +33,23 @@ jobs:
 
 All inputs are optional and have sensible defaults.
 
-| Input                     | Type   | Default                               | Description                                               |
-|---------------------------|--------|---------------------------------------|-----------------------------------------------------------|
-| `job-name`                | string | `airgapper`                           | Display name for the job in the Actions UI                |
-| `image_registry`          | string | `ghcr.io`                             | Container registry hosting the airgapper image            |
-| `image_name`              | string | `fullstacks-gmbh/airgapper`           | Image name (without registry or tag)                      |
-| `image_tag`               | string | `latest`                              | Image tag to use                                          |
-| `image_pull_policy`       | string | `always`                              | Image pull policy (`always`, `if-not-present`, `never`)   |
-| `config-folder`           | string | (workspace)                           | Path to folder containing `*.config.airgapper.yaml` files |
-| `debug`                   | string | `""`                                  | Set to `--debug` to enable debug logging                  |
-| `credentials-secret-name` | string | `UNIVERSAL_AIRGAPPER_CREDS`           | Legacy secret lookup when `AIRGAPPER_CREDENTIALS` is not mapped |
+| Input                      | Type    | Default                      | Description                                                      |
+| -------------------------- | ------- | ---------------------------- | ---------------------------------------------------------------- |
+| `job-name`                 | string  | `airgapper`                  | Display name for the job in the Actions UI                       |
+| `image_registry`           | string  | `ghcr.io`                    | Container registry hosting the airgapper image                   |
+| `image_name`               | string  | `fullstacks-gmbh/airgapper`  | Image name (without registry or tag)                             |
+| `image_tag`                | string  | `latest`                     | Image tag to use                                                 |
+| `image_pull_policy`        | string  | `always`                     | Image pull policy (`always`, `if-not-present`, `never`)          |
+| `config-folder`            | string  | (workspace)                  | Path to folder containing `*.config.airgapper.yaml` files        |
+| `debug`                    | string  | `""`                         | Set to `--debug` to enable debug logging                         |
+| `credentials-secret-name`  | string  | `UNIVERSAL_AIRGAPPER_CREDS`  | Legacy secret lookup when `AIRGAPPER_CREDENTIALS` is not mapped  |
 
 ## Secrets
 
-| Secret                  | Required | Description                                                                                            |
-|-------------------------|----------|--------------------------------------------------------------------------------------------------------|
-| `GHCR_PAT`              | yes      | Personal access token with `read:packages` scope, used to pull the airgapper container image from GHCR |
-| `AIRGAPPER_CREDENTIALS` | no       | Full airgapper credential YAML; preferred over dynamic secret lookup                                  |
+| Secret                   | Required  | Description                                                                                             |
+| ------------------------ | --------- | ------------------------------------------------------------------------------------------------------- |
+| `GHCR_PAT`               | yes       | Personal access token with `read:packages` scope, used to pull the airgapper container image from GHCR  |
+| `AIRGAPPER_CREDENTIALS`  | no        | Full airgapper credential YAML; preferred over dynamic secret lookup                                    |
 
 Map the repository secret containing the credential YAML to the reusable workflow's `AIRGAPPER_CREDENTIALS` secret, as shown in the examples.
 
@@ -73,7 +74,8 @@ jobs:
       AIRGAPPER_CREDENTIALS: ${{ secrets.UNIVERSAL_AIRGAPPER_CREDS }}
 ```
 
-Config files are expected at the repository root (`*.config.airgapper.yaml`). Credentials are read from the `UNIVERSAL_AIRGAPPER_CREDS` secret.
+Config files are expected at the repository root (`*.config.airgapper.yaml`).
+Credentials are read from the `UNIVERSAL_AIRGAPPER_CREDS` secret.
 
 ### With Custom Config Folder and Debug
 
@@ -121,11 +123,13 @@ jobs:
 
 ### GHCR_PAT
 
-Create a personal access token with `read:packages` scope at [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens). Add it as a repository secret named `GHCR_PAT`.
+Create a personal access token with `read:packages` scope at [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens).
+Add it as a repository secret named `GHCR_PAT`.
 
 ### UNIVERSAL_AIRGAPPER_CREDS
 
-Store your credential YAML as a repository secret. The full YAML content goes into the secret value:
+Store your credential YAML as a repository secret.
+The full YAML content goes into the secret value:
 
 ```yaml
 image:

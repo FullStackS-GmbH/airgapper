@@ -3,15 +3,14 @@
 A Go CLI tool for synchronizing container images, Helm charts, and Git repositories across air-gapped environments.
 
 <!-- Badges -->
-![Build](https://img.shields.io/github/actions/workflow/status/fullstacks-gmbh/airgapper/ci.yml?branch=main)
-![Release](https://img.shields.io/github/v/release/fullstacks-gmbh/airgapper)
-![License](https://img.shields.io/github/license/fullstacks-gmbh/airgapper)
+![Build](https://img.shields.io/github/actions/workflow/status/fullstacks-gmbh/airgapper/ci.yml?branch=main) ![Release](https://img.shields.io/github/v/release/fullstacks-gmbh/airgapper) ![License](https://img.shields.io/github/license/fullstacks-gmbh/airgapper)
 
 ---
 
 ## What It Does
 
-Universal Airgapper reads a YAML configuration file listing artifacts (container images, Helm charts, Git repos) with their source and destination, then copies each artifact from source to destination. It is designed for environments where registries sit behind an air gap and artifacts must be moved in a controlled, automated way.
+Universal Airgapper reads a YAML configuration file listing artifacts (container images, Helm charts, Git repos) with their source and destination, then copies each artifact from source to destination.
+It is designed for environments where registries sit behind an air gap and artifacts must be moved in a controlled, automated way.
 
 ## Features
 
@@ -46,16 +45,16 @@ Without `AIRGAPPER_INSTALL_DIR`, it installs into the first of `~/.local/bin`, `
 
 Control the script with these environment variables.
 
-| Variable                  | Default    | Effect                                                              |
-|---------------------------|------------|---------------------------------------------------------------------|
-| `AIRGAPPER_VERSION`       | latest     | Install a specific release, with or without the `v` prefix          |
-| `AIRGAPPER_INSTALL_DIR`   | auto       | Target directory, created if missing                                |
-| `AIRGAPPER_OS`            | `uname -s` | Override the platform (`linux`, `darwin`, `windows`)                |
-| `AIRGAPPER_ARCH`          | `uname -m` | Override the architecture (`amd64`, `arm64`)                        |
-| `AIRGAPPER_YES`           | `0`        | Skip the confirmation prompt                                        |
-| `AIRGAPPER_QUIET`         | `0`        | Suppress progress output                                            |
-| `AIRGAPPER_SKIP_CHECKSUM` | `0`        | Install without checksum verification, not recommended              |
-| `NO_COLOR`                | unset      | Disable colored output                                              |
+| Variable                   | Default     | Effect                                                      |
+| -------------------------- | ----------- | ----------------------------------------------------------- |
+| `AIRGAPPER_VERSION`        | latest      | Install a specific release, with or without the `v` prefix  |
+| `AIRGAPPER_INSTALL_DIR`    | auto        | Target directory, created if missing                        |
+| `AIRGAPPER_OS`             | `uname -s`  | Override the platform (`linux`, `darwin`, `windows`)        |
+| `AIRGAPPER_ARCH`           | `uname -m`  | Override the architecture (`amd64`, `arm64`)                |
+| `AIRGAPPER_YES`            | `0`         | Skip the confirmation prompt                                |
+| `AIRGAPPER_QUIET`          | `0`         | Suppress progress output                                    |
+| `AIRGAPPER_SKIP_CHECKSUM`  | `0`         | Install without checksum verification, not recommended      |
+| `NO_COLOR`                 | unset       | Disable colored output                                      |
 
 ```shell
 # Pin a version and install unattended into a custom directory
@@ -196,9 +195,8 @@ resources:
       - "16\\..*"             # regex: all 16.x versions
 ```
 
-The destination OCI artifact name is automatically derived from `Chart.yaml`,
-which also handles vendor artifacts whose repository name differs from the real
-chart name. Set `destination_chart` only for an explicit name override.
+The destination OCI artifact name is automatically derived from `Chart.yaml`, which also handles vendor artifacts whose repository name differs from the real chart name.
+Set `destination_chart` only for an explicit name override.
 
 ### Git Resources
 
@@ -220,7 +218,8 @@ resources:
 
 ### Scanner Configuration
 
-Define external scanner commands that run before an artifact is pushed. The scanner is generic -- any command-line tool that returns an exit code can be used.
+Define external scanner commands that run before an artifact is pushed.
+The scanner is generic -- any command-line tool that returns an exit code can be used.
 
 ```yaml
 scanners:
@@ -240,13 +239,13 @@ resources:
 
 **Available placeholders** in the scanner command:
 
-| Placeholder    | Description                                                    |
-|----------------|----------------------------------------------------------------|
-| `{registry}`   | Registry hostname (e.g., `registry-1.docker.io`)               |
-| `{repository}` | Repository path (e.g., `library/ubuntu`)                       |
-| `{tag}`        | Tag / version / ref being synced                               |
-| `{source}`     | Full source reference (e.g., `docker.io/library/ubuntu:22.04`) |
-| `{type}`       | Resource type (`image`, `helm`, `git`)                         |
+| Placeholder     | Description                                                     |
+| --------------- | --------------------------------------------------------------- |
+| `{registry}`    | Registry hostname (e.g., `registry-1.docker.io`)                |
+| `{repository}`  | Repository path (e.g., `library/ubuntu`)                        |
+| `{tag}`         | Tag / version / ref being synced                                |
+| `{source}`      | Full source reference (e.g., `docker.io/library/ubuntu:22.04`)  |
+| `{type}`        | Resource type (`image`, `helm`, `git`)                          |
 
 ### Full Example
 
@@ -345,24 +344,25 @@ airgapper version         Print version, commit, and build date
 
 ### Global Flags
 
-| Flag            | Short | Env Var                 | Default | Description                              |
-|-----------------|-------|-------------------------|---------|------------------------------------------|
-| `--config`      | `-c`  | `AIRGAPPER_CONFIG`      | (none)  | Path to config file or folder            |
-| `--credentials` |       | `AIRGAPPER_CREDENTIALS` | (none)  | Path to credentials file or folder       |
-| `--debug`       | `-d`  | `AIRGAPPER_DEBUG`       | `false` | Enable debug logging (JSON, DEBUG level) |
-| `--dry-run`     |       | `AIRGAPPER_DRY_RUN`     | `false` | Disable all write/push operations        |
-| `--log-format`  |       | `AIRGAPPER_LOG_FORMAT`  | `json`  | Log format: `json` or `text`             |
-| `--dry-run-log` |       | `AIRGAPPER_DRY_RUN_LOG` | (auto)  | Path for the dry-run log file            |
-| `--timeout`     |       | `AIRGAPPER_TIMEOUT`     | `0`     | Overall run timeout in seconds (0 = off) |
+| Flag             | Short  | Env Var                  | Default  | Description                               |
+| ---------------- | ------ | ------------------------ | -------- | ----------------------------------------- |
+| `--config`       | `-c`   | `AIRGAPPER_CONFIG`       | (none)   | Path to config file or folder             |
+| `--credentials`  |        | `AIRGAPPER_CREDENTIALS`  | (none)   | Path to credentials file or folder        |
+| `--debug`        | `-d`   | `AIRGAPPER_DEBUG`        | `false`  | Enable debug logging (JSON, DEBUG level)  |
+| `--dry-run`      |        | `AIRGAPPER_DRY_RUN`      | `false`  | Disable all write/push operations         |
+| `--log-format`   |        | `AIRGAPPER_LOG_FORMAT`   | `json`   | Log format: `json` or `text`              |
+| `--dry-run-log`  |        | `AIRGAPPER_DRY_RUN_LOG`  | (auto)   | Path for the dry-run log file             |
+| `--timeout`      |        | `AIRGAPPER_TIMEOUT`      | `0`      | Overall run timeout in seconds (0 = off)  |
 
 ### `helm images` Flags
 
-| Flag                      | Env Var                                        | Required | Description                                                                 |
-|---------------------------|------------------------------------------------|----------|-----------------------------------------------------------------------------|
-| `--output`, `-o`          | `AIRGAPPER_HELM_IMAGES_OUTPUT`                 | yes      | Path to write the generated image config YAML                               |
-| `--target-credentials-ref`| `AIRGAPPER_HELM_IMAGES_TARGET_CREDENTIALS_REF` | yes      | Name of a helm credential entry whose `name` field is the destination registry hostname |
+| Flag                        | Env Var                                         | Required  | Description                                                                              |
+| --------------------------- | ----------------------------------------------- | --------- | ---------------------------------------------------------------------------------------- |
+| `--output`, `-o`            | `AIRGAPPER_HELM_IMAGES_OUTPUT`                  | yes       | Path to write the generated image config YAML                                            |
+| `--target-credentials-ref`  | `AIRGAPPER_HELM_IMAGES_TARGET_CREDENTIALS_REF`  | yes       | Name of a helm credential entry whose `name` field is the destination registry hostname  |
 
-The command reads all `helm` resources from the config, pulls and renders each chart version with its default values, extracts every `image:` reference from the rendered manifests, and writes a ready-to-use airgapper image config YAML to `--output`. The output file can be fed directly to `airgapper sync` to mirror those images into an air-gapped registry.
+The command reads all `helm` resources from the config, pulls and renders each chart version with its default values, extracts every `image:` reference from the rendered manifests, and writes a ready-to-use airgapper image config YAML to `--output`.
+The output file can be fed directly to `airgapper sync` to mirror those images into an air-gapped registry.
 
 ```shell
 airgapper helm images \
@@ -374,11 +374,11 @@ airgapper helm images \
 
 ### Exit Codes
 
-| Code | Meaning                                  |
-|------|------------------------------------------|
-| `0`  | All resources synced successfully        |
-| `1`  | Sync completed with one or more failures |
-| `2`  | Usage or configuration error             |
+| Code  | Meaning                                   |
+| ----- | ----------------------------------------- |
+| `0`   | All resources synced successfully         |
+| `1`   | Sync completed with one or more failures  |
+| `2`   | Usage or configuration error              |
 
 ### Examples
 
@@ -433,7 +433,8 @@ docker run --rm \
 
 ### Kubernetes Job
 
-Mount config via ConfigMap and credentials via Secrets. Example manifests are in `k8s/`.
+Mount config via ConfigMap and credentials via Secrets.
+Example manifests are in `k8s/`.
 
 ```yaml
 apiVersion: batch/v1
@@ -490,7 +491,8 @@ spec:
 
 ### GitHub Actions
 
-Use the reusable workflow from this repository. See [docs/github-actions.md](docs/github-actions.md).
+Use the reusable workflow from this repository.
+See [docs/github-actions.md](docs/github-actions.md).
 
 ```yaml
 jobs:
@@ -504,7 +506,8 @@ jobs:
 
 ### GitLab CI
 
-Use the CI component template. See [docs/gitlab-ci.md](docs/gitlab-ci.md).
+Use the CI component template.
+See [docs/gitlab-ci.md](docs/gitlab-ci.md).
 
 ```yaml
 include:
@@ -577,7 +580,8 @@ golangci-lint run
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, testing guidelines, and commit conventions.
+Contributions are welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, testing guidelines, and commit conventions.
 
 ## License
 

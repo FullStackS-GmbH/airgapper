@@ -4,7 +4,8 @@ This document covers the credential file format, resolution logic, and security 
 
 ## Providing Credentials
 
-Credentials are supplied via the `--credentials` flag (or `AIRGAPPER_CREDENTIALS` env var). The value can be:
+Credentials are supplied via the `--credentials` flag (or `AIRGAPPER_CREDENTIALS` env var).
+The value can be:
 
 - A **single YAML file**: `--credentials creds.yaml`
 - A **folder**: `--credentials ./creds/`
@@ -45,28 +46,28 @@ git:
 
 #### Image Credentials
 
-| Field      | Required | Description                                                 |
-|------------|----------|-------------------------------------------------------------|
-| `name`     | yes      | Unique identifier (used for reference or hostname matching) |
-| `username` | yes      | Registry username                                           |
-| `password` | yes      | Registry password or token                                  |
+| Field       | Required  | Description                                                  |
+| ----------- | --------- | ------------------------------------------------------------ |
+| `name`      | yes       | Unique identifier (used for reference or hostname matching)  |
+| `username`  | yes       | Registry username                                            |
+| `password`  | yes       | Registry password or token                                   |
 
 #### Helm Credentials
 
-| Field      | Required | Description                |
-|------------|----------|----------------------------|
-| `name`     | yes      | Unique identifier          |
-| `username` | yes      | Registry username          |
-| `password` | yes      | Registry password or token |
+| Field       | Required  | Description                 |
+| ----------- | --------- | --------------------------- |
+| `name`      | yes       | Unique identifier           |
+| `username`  | yes       | Registry username           |
+| `password`  | yes       | Registry password or token  |
 
 #### Git Credentials
 
-| Field          | Required | Description                                            |
-|----------------|----------|--------------------------------------------------------|
-| `name`         | yes      | Unique identifier                                      |
-| `username`     | no       | Git username (for HTTPS auth)                          |
-| `password`     | no       | Git password or personal access token (for HTTPS auth) |
-| `ssh_key_path` | no       | Absolute path to SSH private key file                  |
+| Field           | Required  | Description                                             |
+| --------------- | --------- | ------------------------------------------------------- |
+| `name`          | yes       | Unique identifier                                       |
+| `username`      | no        | Git username (for HTTPS auth)                           |
+| `password`      | no        | Git password or personal access token (for HTTPS auth)  |
+| `ssh_key_path`  | no        | Absolute path to SSH private key file                   |
 
 For Git, provide either `username`/`password` (HTTPS) or `ssh_key_path` (SSH), depending on the repository URL protocol.
 
@@ -76,7 +77,9 @@ Resources can reference credentials explicitly, or the tool resolves them automa
 
 ### Resolution Order
 
-1. **By explicit reference**: If the resource specifies `source_credentials_ref` or `target_credentials_ref`, the tool looks up the credential by its `name` and resource type. The same name can therefore be used for image and Helm credentials. If the referenced name does not exist for that type, the operation fails with an error.
+1. **By explicit reference**: If the resource specifies `source_credentials_ref` or `target_credentials_ref`, the tool looks up the credential by its `name` and resource type.
+   The same name can therefore be used for image and Helm credentials.
+   If the referenced name does not exist for that type, the operation fails with an error.
 
 2. **By hostname**: If no explicit reference is set, the tool extracts the hostname from the endpoint URL and searches for a credential whose `name` matches that hostname.
 
@@ -141,11 +144,13 @@ git:
 
 Under the hood, the git transporter reads the environment variable specified in `password` and passes it as an HTTP extra header to Git.
 
-> **Note**: This workaround is only supported for pulling from Azure Repos. See the [Azure DevOps authentication docs](https://learn.microsoft.com/en-us/azure/devops/repos/git/auth-overview) for background.
+> **Note**: This workaround is only supported for pulling from Azure Repos.
+> See the [Azure DevOps authentication docs](https://learn.microsoft.com/en-us/azure/devops/repos/git/auth-overview) for background.
 
 ## SSH Key Configuration
 
-For Git operations over SSH, you need a valid SSH configuration. This includes:
+For Git operations over SSH, you need a valid SSH configuration.
+This includes:
 
 - An SSH private key file
 - A `known_hosts` file (to avoid host verification prompts)
@@ -210,12 +215,16 @@ All files are loaded and their credential lists are merged.
 ## Security Recommendations
 
 - **File permissions**: Set credential files to `600` (owner read/write only).
+
   ```shell
   chmod 600 creds/*.yaml
   ```
-- **Never commit credentials** to version control. Add credential paths to `.gitignore`.
+
+- **Never commit credentials** to version control.
+  Add credential paths to `.gitignore`.
 - **Rotate credentials** regularly, especially personal access tokens.
 - **Use separate credentials** for different environments (dev, staging, production).
 - **Prefer SSH keys** over passwords for Git operations.
 - **Use short-lived tokens** where possible (e.g., CI/CD pipeline tokens).
-- **The tool never logs credential values**, even at DEBUG level. Only credential names and file paths appear in logs.
+- **The tool never logs credential values**, even at DEBUG level.
+  Only credential names and file paths appear in logs.

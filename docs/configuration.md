@@ -9,7 +9,8 @@ Configuration files must match one of these patterns:
 - `*.config.airgapper.yaml`
 - `*.config.airgapper.yml`
 
-When `--config` points to a **folder**, all matching files in that folder are discovered and merged. When it points to a **single file**, only that file is loaded.
+When `--config` points to a **folder**, all matching files in that folder are discovered and merged.
+When it points to a **single file**, only that file is loaded.
 
 ## Multi-File Merging
 
@@ -48,18 +49,19 @@ resources:
 
 ### Image (`type: image` or `type: docker`)
 
-Sync container images between Docker v2-compatible registries. The type `docker` is accepted as an alias for `image`.
+Sync container images between Docker v2-compatible registries.
+The type `docker` is accepted as an alias for `image`.
 
-| Field                    | Required | Description                                                                |
-|--------------------------|----------|----------------------------------------------------------------------------|
-| `type`                   | yes      | `image` or `docker`                                                        |
-| `source`                 | yes      | Source image reference (e.g., `ubuntu`, `registry.example.com/repo/image`) |
-| `destination`            | yes      | Destination image reference                                                |
-| `tags`                   | yes      | List of tags to sync (supports regex patterns)                             |
-| `push_mode`              | no       | `skip` (default) or `force`                                                |
-| `scanner_ref`            | no       | Name of a scanner to run before push                                       |
-| `source_credentials_ref` | no       | Name of a credential entry for the source                                  |
-| `target_credentials_ref` | no       | Name of a credential entry for the destination                             |
+| Field                     | Required  | Description                                                                 |
+| ------------------------- | --------- | --------------------------------------------------------------------------- |
+| `type`                    | yes       | `image` or `docker`                                                         |
+| `source`                  | yes       | Source image reference (e.g., `ubuntu`, `registry.example.com/repo/image`)  |
+| `destination`             | yes       | Destination image reference                                                 |
+| `tags`                    | yes       | List of tags to sync (supports regex patterns)                              |
+| `push_mode`               | no        | `skip` (default) or `force`                                                 |
+| `scanner_ref`             | no        | Name of a scanner to run before push                                        |
+| `source_credentials_ref`  | no        | Name of a credential entry for the source                                   |
+| `target_credentials_ref`  | no        | Name of a credential entry for the destination                              |
 
 **Image name resolution** follows Docker conventions:
 
@@ -86,18 +88,18 @@ resources:
 
 Sync Helm charts between OCI registries and legacy HTTP chart repositories.
 
-| Field                    | Required | Description                                                       |
-|--------------------------|----------|-------------------------------------------------------------------|
-| `type`                   | yes      | `helm`                                                            |
-| `source_registry`        | yes      | Source registry hostname                                          |
-| `source_chart`           | yes      | Chart name within source registry (e.g., `bitnamicharts/mariadb`) |
-| `destination_registry`   | yes      | Destination registry hostname                                     |
-| `destination_repo`       | yes      | Repository path in destination registry                           |
-| `destination_chart`      | no       | Override the destination chart name and chart metadata            |
-| `versions`               | yes      | List of chart versions to sync (supports regex patterns)          |
-| `push_mode`              | no       | `skip` (default) or `overwrite`                                   |
-| `source_credentials_ref` | no       | Name of a credential entry for the source                         |
-| `target_credentials_ref` | no       | Name of a credential entry for the destination                    |
+| Field                     | Required  | Description                                                        |
+| ------------------------- | --------- | ------------------------------------------------------------------ |
+| `type`                    | yes       | `helm`                                                             |
+| `source_registry`         | yes       | Source registry hostname                                           |
+| `source_chart`            | yes       | Chart name within source registry (e.g., `bitnamicharts/mariadb`)  |
+| `destination_registry`    | yes       | Destination registry hostname                                      |
+| `destination_repo`        | yes       | Repository path in destination registry                            |
+| `destination_chart`       | no        | Override the destination chart name and chart metadata             |
+| `versions`                | yes       | List of chart versions to sync (supports regex patterns)           |
+| `push_mode`               | no        | `skip` (default) or `overwrite`                                    |
+| `source_credentials_ref`  | no        | Name of a credential entry for the source                          |
+| `target_credentials_ref`  | no        | Name of a credential entry for the destination                     |
 
 ```yaml
 resources:
@@ -113,9 +115,7 @@ resources:
       - "16\\..*"         # Regex: matches all 16.x versions
 ```
 
-The destination OCI artifact name is taken from the pulled chart's `Chart.yaml`,
-so vendor artifacts whose repository basename differs from the real chart name
-are corrected automatically:
+The destination OCI artifact name is taken from the pulled chart's `Chart.yaml`, so vendor artifacts whose repository basename differs from the real chart name are corrected automatically:
 
 ```yaml
 resources:
@@ -129,30 +129,29 @@ resources:
 ```
 
 Set `destination_chart` only to explicitly override the name from `Chart.yaml`.
-The override changes the OCI artifact basename, chart metadata, and archive
-directory together.
+The override changes the OCI artifact basename, chart metadata, and archive directory together.
 
 ### Git (`type: git`)
 
 Sync Git repositories between hosting services via HTTPS or SSH.
 
-| Field                    | Required | Description                                                          |
-|--------------------------|----------|----------------------------------------------------------------------|
-| `type`                   | yes      | `git`                                                                |
-| `source_repo`            | yes      | Source repository URL (HTTPS or SSH)                                 |
-| `destination_repo`       | yes      | Destination repository URL (HTTPS or SSH)                            |
-| `refs`                   | yes      | List of refs to sync: branches, tags, SHAs (supports regex patterns) |
-| `push_mode`              | no       | `skip` (default), `push`, or `force`                                 |
-| `source_credentials_ref` | no       | Name of a credential entry for the source                            |
-| `target_credentials_ref` | no       | Name of a credential entry for the destination                       |
+| Field                     | Required  | Description                                                           |
+| ------------------------- | --------- | --------------------------------------------------------------------- |
+| `type`                    | yes       | `git`                                                                 |
+| `source_repo`             | yes       | Source repository URL (HTTPS or SSH)                                  |
+| `destination_repo`        | yes       | Destination repository URL (HTTPS or SSH)                             |
+| `refs`                    | yes       | List of refs to sync: branches, tags, SHAs (supports regex patterns)  |
+| `push_mode`               | no        | `skip` (default), `push`, or `force`                                  |
+| `source_credentials_ref`  | no        | Name of a credential entry for the source                             |
+| `target_credentials_ref`  | no        | Name of a credential entry for the destination                        |
 
 **Push modes for git:**
 
-| Mode    | Behavior                                                              |
-|---------|-----------------------------------------------------------------------|
-| `skip`  | Skip if the ref already exists at the destination                     |
-| `push`  | Push the ref (fails if the remote rejects it, e.g., non-fast-forward) |
-| `force` | Force push the ref (overwrites the remote ref unconditionally)        |
+| Mode     | Behavior                                                               |
+| -------- | ---------------------------------------------------------------------- |
+| `skip`   | Skip if the ref already exists at the destination                      |
+| `push`   | Push the ref (fails if the remote rejects it, e.g., non-fast-forward)  |
+| `force`  | Force push the ref (overwrites the remote ref unconditionally)         |
 
 ```yaml
 resources:
@@ -170,26 +169,27 @@ resources:
 
 ## Scanner Configuration
 
-Scanners are external commands that run before an artifact is pushed to the destination. They are defined in the `scanners` section and referenced by name in resources via `scanner_ref`.
+Scanners are external commands that run before an artifact is pushed to the destination.
+They are defined in the `scanners` section and referenced by name in resources via `scanner_ref`.
 
-| Field          | Required | Default | Description                                    |
-|----------------|----------|---------|------------------------------------------------|
-| `name`         | yes      |         | Unique identifier, referenced by `scanner_ref` |
-| `command`      | yes      |         | Shell command template with placeholders       |
-| `success_code` | no       | `0`     | Exit code that indicates a passing scan        |
-| `timeout`      | no       | `300`   | Maximum execution time in seconds              |
+| Field           | Required  | Default  | Description                                     |
+| --------------- | --------- | -------- | ----------------------------------------------- |
+| `name`          | yes       |          | Unique identifier, referenced by `scanner_ref`  |
+| `command`       | yes       |          | Shell command template with placeholders        |
+| `success_code`  | no        | `0`      | Exit code that indicates a passing scan         |
+| `timeout`       | no        | `300`    | Maximum execution time in seconds               |
 
 ### Command Placeholders
 
 The command string supports placeholders that are substituted with artifact metadata at runtime:
 
-| Placeholder    | Substituted With                                                          |
-|----------------|---------------------------------------------------------------------------|
-| `{registry}`   | Registry hostname (e.g., `registry-1.docker.io`)                          |
-| `{repository}` | Repository path (e.g., `library/ubuntu`)                                  |
-| `{tag}`        | Tag, version, or ref being synced                                         |
-| `{source}`     | Full source reference (e.g., `registry-1.docker.io/library/ubuntu:22.04`) |
-| `{type}`       | Resource type (`image`, `helm`, `git`)                                    |
+| Placeholder     | Substituted With                                                           |
+| --------------- | -------------------------------------------------------------------------- |
+| `{registry}`    | Registry hostname (e.g., `registry-1.docker.io`)                           |
+| `{repository}`  | Repository path (e.g., `library/ubuntu`)                                   |
+| `{tag}`         | Tag, version, or ref being synced                                          |
+| `{source}`      | Full source reference (e.g., `registry-1.docker.io/library/ubuntu:22.04`)  |
+| `{type}`        | Resource type (`image`, `helm`, `git`)                                     |
 
 ### Examples
 
@@ -229,14 +229,14 @@ When a pattern is detected:
 
 ### Examples
 
-| Pattern        | Matches                                                |
-|----------------|--------------------------------------------------------|
-| `v1\\..*`      | `v1.0.0`, `v1.2.3`, `v1.99.0`                          |
-| `v[0-9]+\\..*` | Any tag starting with `v` followed by digits and a dot |
-| `release/.*`   | `release/1.0`, `release/hotfix`, etc.                  |
-| `main`         | Literal match: only `main`                             |
-| `"22.04"`      | Literal match: only `22.04` (no regex metacharacters)  |
-| `108.0.1+up2.8.10` | Literal Helm/SemVer build metadata version        |
+| Pattern             | Matches                                                 |
+| ------------------- | ------------------------------------------------------- |
+| `v1\\..*`           | `v1.0.0`, `v1.2.3`, `v1.99.0`                           |
+| `v[0-9]+\\..*`      | Any tag starting with `v` followed by digits and a dot  |
+| `release/.*`        | `release/1.0`, `release/hotfix`, etc.                   |
+| `main`              | Literal match: only `main`                              |
+| `"22.04"`           | Literal match: only `22.04` (no regex metacharacters)   |
+| `108.0.1+up2.8.10`  | Literal Helm/SemVer build metadata version              |
 
 ## Full Example
 

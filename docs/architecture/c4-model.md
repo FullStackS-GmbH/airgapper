@@ -63,20 +63,20 @@ The System Context diagram shows Universal Airgapper and its relationships to ex
 
 ### Actors
 
-| Actor                    | Description                                                        |
-|--------------------------|--------------------------------------------------------------------|
-| **DevOps Engineer**      | Runs the CLI locally to sync artifacts on demand.                  |
-| **CI/CD Pipeline**       | GitHub Actions or GitLab CI invokes airgapper as a container step. |
-| **Kubernetes Scheduler** | Runs airgapper as a Job or CronJob for periodic synchronization.   |
+| Actor                     | Description                                                         |
+| ------------------------- | ------------------------------------------------------------------- |
+| **DevOps Engineer**       | Runs the CLI locally to sync artifacts on demand.                   |
+| **CI/CD Pipeline**        | GitHub Actions or GitLab CI invokes airgapper as a container step.  |
+| **Kubernetes Scheduler**  | Runs airgapper as a Job or CronJob for periodic synchronization.    |
 
 ### External Systems
 
-| System                    | Protocol                                    | Purpose                                                      |
-|---------------------------|---------------------------------------------|--------------------------------------------------------------|
-| **Container Registries**  | Docker Registry HTTP API v2                 | Pull and push OCI/Docker container images.                   |
-| **Helm Chart Registries** | OCI Distribution / HTTP (legacy index.yaml) | Pull and push Helm charts.                                   |
-| **Git Hosting Services**  | HTTPS / SSH                                 | Clone and push git repositories (branches, tags).            |
-| **External Scanners**     | Shell command execution                     | Run security/compliance scans on artifacts before promotion. |
+| System                     | Protocol                                     | Purpose                                                       |
+| -------------------------- | -------------------------------------------- | ------------------------------------------------------------- |
+| **Container Registries**   | Docker Registry HTTP API v2                  | Pull and push OCI/Docker container images.                    |
+| **Helm Chart Registries**  | OCI Distribution / HTTP (legacy index.yaml)  | Pull and push Helm charts.                                    |
+| **Git Hosting Services**   | HTTPS / SSH                                  | Clone and push git repositories (branches, tags).             |
+| **External Scanners**      | Shell command execution                      | Run security/compliance scans on artifacts before promotion.  |
 
 ---
 
@@ -124,13 +124,13 @@ The Container diagram zooms into Universal Airgapper to show its deployable unit
 
 ### Deployment Contexts
 
-| Context                | How it runs                                                     |
-|------------------------|-----------------------------------------------------------------|
-| **Local CLI**          | `airgapper sync --config ./configs/ --credentials ./creds/`     |
-| **GitHub Actions**     | Reusable workflow runs the container image with mounted config  |
-| **GitLab CI**          | Component template runs the container image with CI variables   |
-| **Kubernetes Job**     | ConfigMap (config) + Secrets (credentials) mounted into the pod |
-| **Kubernetes CronJob** | Same as Job, on a cron schedule                                 |
+| Context                 | How it runs                                                      |
+| ----------------------- | ---------------------------------------------------------------- |
+| **Local CLI**           | `airgapper sync --config ./configs/ --credentials ./creds/`      |
+| **GitHub Actions**      | Reusable workflow runs the container image with mounted config   |
+| **GitLab CI**           | Component template runs the container image with CI variables    |
+| **Kubernetes Job**      | ConfigMap (config) + Secrets (credentials) mounted into the pod  |
+| **Kubernetes CronJob**  | Same as Job, on a cron schedule                                  |
 
 ---
 
@@ -259,18 +259,18 @@ The Component diagram shows the internal building blocks of the Go binary, organ
 
 ### Component Responsibilities
 
-| Component             | Package                     | Responsibility                                                                                                                                                           |
-|-----------------------|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **CLI Layer**         | `internal/cli/`, `internal/helmimages/` | Parse arguments, wire dependencies, invoke engine, map results to exit codes. `helm images` renders Helm charts and extracts image references via `helmimages/`. |
-| **Config Loader**     | `internal/config/`          | Discover, merge, validate YAML config files. Unmarshal into typed structs.                                                                                               |
-| **Domain Core**       | `internal/domain/`          | Define shared types (`Resource`, `Credential`, `SyncResult`), interfaces (`Transporter`, `Scanner`, `CredentialStore`), and sentinel errors. Zero external dependencies. |
-| **Sync Engine**       | `internal/sync/`            | Orchestrate the sync workflow: iterate resources, select transporter, run scanner, execute sync, aggregate results.                                                      |
-| **Image Transporter** | `internal/transport/image/` | Copy container images using `go.podman.io/image/v5`. Handle manifests, layers, multi-arch, auth tokens, existence checks, and tag listing.                               |
-| **Helm Transporter**  | `internal/transport/helm/`  | Copy Helm charts using the Helm v4 SDK. Handle OCI and legacy HTTP registries.                                                                                           |
-| **Git Transporter**   | `internal/transport/git/`   | Clone and push git repos using `go-git/go-git/v5`. Handle HTTPS/SSH auth, regex ref matching.                                                                            |
-| **Credential Store**  | `internal/credentials/`     | Load credential YAML files, resolve credentials by host/name reference, support multiple credential types.                                                               |
-| **External Scanner**  | `internal/scanner/`         | Execute parameterized shell commands, check return codes, capture output. Generic — no tool-specific logic.                                                              |
-| **Logging**           | `internal/logging/`         | Configure `slog` with JSON handler, set log level from flags, provide contextual logger creation.                                                                        |
+| Component              | Package                                  | Responsibility                                                                                                                                                            |
+| ---------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CLI Layer**          | `internal/cli/`, `internal/helmimages/`  | Parse arguments, wire dependencies, invoke engine, map results to exit codes. `helm images` renders Helm charts and extracts image references via `helmimages/`.          |
+| **Config Loader**      | `internal/config/`                       | Discover, merge, validate YAML config files. Unmarshal into typed structs.                                                                                                |
+| **Domain Core**        | `internal/domain/`                       | Define shared types (`Resource`, `Credential`, `SyncResult`), interfaces (`Transporter`, `Scanner`, `CredentialStore`), and sentinel errors. Zero external dependencies.  |
+| **Sync Engine**        | `internal/sync/`                         | Orchestrate the sync workflow: iterate resources, select transporter, run scanner, execute sync, aggregate results.                                                       |
+| **Image Transporter**  | `internal/transport/image/`              | Copy container images using `go.podman.io/image/v5`. Handle manifests, layers, multi-arch, auth tokens, existence checks, and tag listing.                                |
+| **Helm Transporter**   | `internal/transport/helm/`               | Copy Helm charts using the Helm v4 SDK. Handle OCI and legacy HTTP registries.                                                                                            |
+| **Git Transporter**    | `internal/transport/git/`                | Clone and push git repos using `go-git/go-git/v5`. Handle HTTPS/SSH auth, regex ref matching.                                                                             |
+| **Credential Store**   | `internal/credentials/`                  | Load credential YAML files, resolve credentials by host/name reference, support multiple credential types.                                                                |
+| **External Scanner**   | `internal/scanner/`                      | Execute parameterized shell commands, check return codes, capture output. Generic — no tool-specific logic.                                                               |
+| **Logging**            | `internal/logging/`                      | Configure `slog` with JSON handler, set log level from flags, provide contextual logger creation.                                                                         |
 
 ---
 
@@ -472,8 +472,7 @@ func SyncVersions(versions []string, syncOne func(version string) (VersionResult
 func DryRunResult(pushMode PushMode, version string, exists bool, logger *slog.Logger, op OpFunc) (VersionResult, []OperationRecord)
 ```
 
-Transporter selection lives in the sync engine: `NewEngine` indexes the
-transporters it is given by `Type()` into a `map[ResourceType]Transporter`.
+Transporter selection lives in the sync engine: `NewEngine` indexes the transporters it is given by `Type()` into a `map[ResourceType]Transporter`.
 
 ### Dependency Flow
 

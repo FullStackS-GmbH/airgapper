@@ -6,7 +6,8 @@
 The Python version mixes transport logic with orchestration.
 
 **Decision**: Adopt hexagonal architecture (ports & adapters).
-The domain core defines interfaces; adapters implement them. Dependencies point inward.
+The domain core defines interfaces; adapters implement them.
+Dependencies point inward.
 
 **Consequences**:
 
@@ -19,9 +20,7 @@ The domain core defines interfaces; adapters implement them. Dependencies point 
 **Context**: Three artifact types (image, helm, git) require different sync implementations but share the same lifecycle (check existence → scan → pull → push).
 
 **Decision**: Use the Strategy pattern via a single `Transporter` interface.
-The sync engine indexes the transporters it is constructed with by `Type()`
-and selects the implementation for each resource from that map — no separate
-factory type, since the set of transporters is fixed at startup.
+The sync engine indexes the transporters it is constructed with by `Type()` and selects the implementation for each resource from that map — no separate factory type, since the set of transporters is fixed at startup.
 
 **Consequences**:
 
@@ -42,7 +41,8 @@ It executes a parameterized shell command, checks the exit code, and captures ou
 - Any scanner tool can be integrated via configuration alone - no code changes needed.
 - The airgapper binary stays vendor-neutral and lightweight.
 - Users define their own command templates with placeholders like `{registry}`, `{repository}`, `{tag}`.
-- Trade-off: no structured vulnerability parsing (threshold counts). Users handle severity logic in their scanner command/script.
+- Trade-off: no structured vulnerability parsing (threshold counts).
+  Users handle severity logic in their scanner command/script.
 
 ### ADR-4: containers/image v5 for Image Transport
 
