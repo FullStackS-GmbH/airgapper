@@ -2,12 +2,15 @@
 
 ## Project Overview
 
-Universal Airgapper is a CLI tool for synchronizing artifacts (container images, Helm charts, Git repositories) across registries and hosts — designed for air-gapped environments and automated CI/CD pipelines. This is a Go rewrite of the original Python implementation, following hexagonal architecture principles.
+Universal Airgapper is a CLI tool for synchronizing artifacts (container images, Helm charts, Git repositories) across registries and hosts — designed for air-gapped environments and automated CI/CD pipelines.
+This is a Go rewrite of the original Python implementation, following hexagonal architecture principles.
 
 ## Architecture
 
 - **Pattern**: Hexagonal Architecture (Ports & Adapters) with Strategy pattern for pluggable transports.
-- **Core domain** (`internal/domain/`): Pure business types, interfaces, and errors. Zero external dependencies. Dependencies always point inward — adapters import domain, never the reverse.
+- **Core domain** (`internal/domain/`): Pure business types, interfaces, and errors.
+  Zero external dependencies.
+  Dependencies always point inward — adapters import domain, never the reverse.
 - **Inbound ports**: CLI commands (cobra), config file parsing (gopkg.in/yaml.v3).
 - **Outbound ports**: `Transporter` interface (image, helm, git), `Scanner` interface, `CredentialStore` interface.
 - **Outbound adapters**: Concrete implementations in `internal/transport/image/`, `internal/transport/helm/`, `internal/transport/git/`, `internal/scanner/`.
@@ -40,19 +43,20 @@ internal/
 
 ## Required Libraries
 
-| Concern | Library                          | Notes                                 |
-|---------|----------------------------------|---------------------------------------|
-| CLI     | `github.com/spf13/cobra`         | Subcommand-based CLI                  |
-| Config  | `gopkg.in/yaml.v3`               | YAML config parsing                   |
-| Git     | `github.com/go-git/go-git/v5`    | Pure-Go git operations                |
-| Helm    | `helm.sh/helm/v4/pkg/action`     | Official Helm v4 SDK                  |
-| Images  | `go.podman.io/image/v5`        | Same engine family as skopeo/podman       |
-| Logging | `log/slog` (stdlib)              | JSON handler, OpenTelemetry semantics |
-| Testing | `github.com/stretchr/testify`    | Assertions and require                |
+| Concern  | Library                        | Notes                                  |
+| -------- | ------------------------------ | -------------------------------------- |
+| CLI      | `github.com/spf13/cobra`       | Subcommand-based CLI                   |
+| Config   | `gopkg.in/yaml.v3`             | YAML config parsing                    |
+| Git      | `github.com/go-git/go-git/v5`  | Pure-Go git operations                 |
+| Helm     | `helm.sh/helm/v4/pkg/action`   | Official Helm v4 SDK                   |
+| Images   | `go.podman.io/image/v5`        | Same engine family as skopeo/podman    |
+| Logging  | `log/slog` (stdlib)            | JSON handler, OpenTelemetry semantics  |
+| Testing  | `github.com/stretchr/testify`  | Assertions and require                 |
 
 ## Setup, Build, and Run
 
-- Requires Go 1.26.3+. Build with `go build ./cmd/airgapper`.
+- Requires Go 1.26.3+.
+  Build with `go build ./cmd/airgapper`.
 - Run locally with `go run ./cmd/airgapper -- --help`.
 - Use `go mod tidy` after adding or removing dependencies; commit both `go.mod` and `go.sum`.
 - For reproducible builds: `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" ./cmd/airgapper`.
@@ -62,9 +66,11 @@ internal/
 ## Coding Style & Conventions
 
 - Follow [Effective Go](https://go.dev/doc/effective_go) and [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments).
-- Run `gofmt` (or `goimports`) on every file — no exceptions. Use `golangci-lint run` as the single linting command.
+- Run `gofmt` (or `goimports`) on every file — no exceptions.
+  Use `golangci-lint run` as the single linting command.
 - Exported names get doc comments starting with the name: `// Client manages registry connections.`
-- Prefer returning `error` over panicking. Wrap errors with `fmt.Errorf("operation: %w", err)` to preserve context.
+- Prefer returning `error` over panicking.
+  Wrap errors with `fmt.Errorf("operation: %w", err)` to preserve context.
 - Use `context.Context` as the first parameter for any function that does I/O or may be cancelled.
 - Keep interfaces small (1–3 methods).
 - Avoid `init()` functions; prefer explicit initialization in `main` or a setup function.
@@ -91,7 +97,8 @@ internal/
 - Support config file (YAML), environment variables, and CLI flags — flags win.
 - Config files: `*.airgapper.yaml` / `*.airgapper.yml` in a folder, merged at load time.
 - Validate configuration early at startup; fail fast with clear messages.
-- Never log secrets. Mask credentials in any debug or error output.
+- Never log secrets.
+  Mask credentials in any debug or error output.
 - Read env-var overrides via the `stringFlag`/`boolFlag`/`intFlag` helpers in `internal/cli/root.go`, which take an explicit `AIRGAPPER_`-prefixed name per flag.
 - Support regex patterns for image tags, chart versions, and git refs.
 
@@ -126,7 +133,8 @@ internal/
 - Use table-driven tests as the default pattern.
 - Use `testify/assert` and `testify/require` for assertions.
 - Use `t.Helper()` in test helpers, `t.Parallel()` for independent tests.
-- Mock external services with interfaces, not concrete types. Use `httptest.NewServer` for HTTP deps.
+- Mock external services with interfaces, not concrete types.
+  Use `httptest.NewServer` for HTTP deps.
 - Place integration tests behind `//go:build integration`.
 - Run: `go test ./...` and `go test -race ./...`.
 

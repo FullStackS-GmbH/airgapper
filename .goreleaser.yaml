@@ -40,6 +40,35 @@ sboms:
     args: [ "$artifact", "-o", "cyclonedx-json=$document" ]
     artifacts: binary
 
+# Detached cosign signatures for everything users download: the archives and
+# the checksums file. Raw binaries are not published, so they are not signed.
+# Key comes from the COSIGN_PRIVATE_KEY / COSIGN_PASSWORD repository secrets;
+# the matching public key is cosign.pub in the repository root.
+signs:
+  - id: archives
+    cmd: cosign
+    artifacts: archive
+    signature: "${artifact}.sigstore.json"
+    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+    args:
+      - "sign-blob"
+      - "--key=env://COSIGN_PRIVATE_KEY"
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+
+  - id: checksums
+    cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+    args:
+      - "sign-blob"
+      - "--key=env://COSIGN_PRIVATE_KEY"
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+
 source:
   enabled: false
 

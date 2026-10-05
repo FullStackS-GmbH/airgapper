@@ -4,7 +4,8 @@ Universal Airgapper provides a GitLab CI [component template](https://docs.gitla
 
 ## Component Template
 
-The template is located at `templates/airgapper.yml` in this repository. It defines a single job that runs the airgapper container image and executes the sync command.
+The template is located at `templates/airgapper.yml` in this repository.
+It defines a single job that runs the airgapper container image and executes the sync command.
 
 ## How to Use
 
@@ -21,25 +22,25 @@ include:
 
 ## Inputs
 
-| Input               | Type   | Default                        | Options         | Description                                    |
-|---------------------|--------|--------------------------------|-----------------|------------------------------------------------|
-| `stage`             | string | `run`                          |                 | Pipeline stage for the job                     |
-| `job-name`          | string | `airgapper`                    |                 | Job name in the pipeline                       |
-| `image_registry`    | string | `ghcr.io`                      |                 | Container registry hosting the airgapper image |
-| `image_name`        | string | `fullstacks-gmbh/airgapper`    |                 | Image name (without registry or tag)           |
-| `image_tag`         | string | `latest`                       |                 | Image tag to use                               |
-| `image_pull_policy` | string | `always`                       |                 | Image pull policy                              |
-| `config-folder`     | string | `${CI_PROJECT_DIR}`            |                 | Path to folder containing config files         |
-| `credentials-file`  | string | `${UNIVERSAL_AIRGAPPER_CREDS}` |                 | Path to credentials file                       |
-| `debug`             | string | `""`                           | `""`, `--debug` | Set to `--debug` to enable debug logging       |
+| Input                | Type    | Default                         | Options          | Description                                     |
+| -------------------- | ------- | ------------------------------- | ---------------- | ----------------------------------------------- |
+| `stage`              | string  | `run`                           |                  | Pipeline stage for the job                      |
+| `job-name`           | string  | `airgapper`                     |                  | Job name in the pipeline                        |
+| `image_registry`     | string  | `ghcr.io`                       |                  | Container registry hosting the airgapper image  |
+| `image_name`         | string  | `fullstacks-gmbh/airgapper`     |                  | Image name (without registry or tag)            |
+| `image_tag`          | string  | `latest`                        |                  | Image tag to use                                |
+| `image_pull_policy`  | string  | `always`                        |                  | Image pull policy                               |
+| `config-folder`      | string  | `${CI_PROJECT_DIR}`             |                  | Path to folder containing config files          |
+| `credentials-file`   | string  | `${UNIVERSAL_AIRGAPPER_CREDS}`  |                  | Path to credentials file                        |
+| `debug`              | string  | `""`                            | `""`, `--debug`  | Set to `--debug` to enable debug logging        |
 
 ## CI Variables
 
 The template expects the following GitLab CI variable to be set:
 
-| Variable                    | Required | Description                                                         |
-|-----------------------------|----------|---------------------------------------------------------------------|
-| `UNIVERSAL_AIRGAPPER_CREDS` | yes      | Path to the credentials YAML file (typically a CI/CD file variable) |
+| Variable                     | Required  | Description                                                          |
+| ---------------------------- | --------- | -------------------------------------------------------------------- |
+| `UNIVERSAL_AIRGAPPER_CREDS`  | yes       | Path to the credentials YAML file (typically a CI/CD file variable)  |
 
 ### Setting Up the Credentials Variable
 
@@ -126,7 +127,8 @@ include:
 
 ### Scheduled Pipeline
 
-To run airgapper on a schedule, create a [pipeline schedule](https://docs.gitlab.com/ee/ci/pipelines/schedules.html) in your project and include the component as above. The job runs whenever the pipeline is triggered.
+To run airgapper on a schedule, create a [pipeline schedule](https://docs.gitlab.com/ee/ci/pipelines/schedules.html) in your project and include the component as above.
+The job runs whenever the pipeline is triggered.
 
 ## Pipeline Build
 

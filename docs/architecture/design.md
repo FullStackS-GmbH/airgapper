@@ -27,12 +27,23 @@ This document complements the [C4 Architecture Model](c4-model.md) with detailed
 
 ## Design Philosophy
 
-1. **Simplicity over cleverness.** Prefer straightforward Go idioms over abstractions. Three similar lines of code are better than a premature abstraction.
-2. **Interfaces at boundaries.** Define small interfaces (1-3 methods) where components interact. Define them where they are consumed, not where they are implemented.
-3. **Dependencies point inward.** The domain core has zero external dependencies. Adapters import domain, never the reverse.
-4. **Fail fast, fail loud.** Validate config at startup. Return errors immediately. Never swallow errors silently.
-5. **Testability by design.** Every component is testable in isolation through interfaces and constructor injection.
-6. **Configuration over code.** Adding a new scanner, changing push behavior, or adjusting auth should require config changes - not code changes.
+1. **Simplicity over cleverness.**
+   Prefer straightforward Go idioms over abstractions.
+   Three similar lines of code are better than a premature abstraction.
+2. **Interfaces at boundaries.**
+   Define small interfaces (1-3 methods) where components interact.
+   Define them where they are consumed, not where they are implemented.
+3. **Dependencies point inward.**
+   The domain core has zero external dependencies.
+   Adapters import domain, never the reverse.
+4. **Fail fast, fail loud.**
+   Validate config at startup.
+   Return errors immediately.
+   Never swallow errors silently.
+5. **Testability by design.**
+   Every component is testable in isolation through interfaces and constructor injection.
+6. **Configuration over code.**
+   Adding a new scanner, changing push behavior, or adjusting auth should require config changes - not code changes.
 
 ---
 
@@ -62,7 +73,8 @@ The application consists of four distinct layers, ordered from outermost to inne
 ```
 
 **Dependency rule**: Each layer may only depend on layers below it.
-Layer 3 (Domain) depends on nothing. Layer 4 (Infrastructure) implements interfaces defined in Layer 3.
+Layer 3 (Domain) depends on nothing.
+Layer 4 (Infrastructure) implements interfaces defined in Layer 3.
 
 ---
 
@@ -74,18 +86,27 @@ Layer 3 (Domain) depends on nothing. Layer 4 (Infrastructure) implements interfa
 
 **Components**:
 
-- `root.go` - Root cobra command. Defines global persistent flags: `--config`, `--credentials`, `--debug`, `--dry-run`, `--log-format`, `--dry-run-log`, `--timeout`. Resolves each flag against its `AIRGAPPER_*` environment variable (explicit flag wins). Initializes logging. Provides `withRunTimeout`, which bounds a command's context by `--timeout` (0 = no timeout).
-- `sync.go` - `sync` subcommand. Loads config, creates credential store, constructs the transporters, creates sync engine, runs engine, prints results, returns exit code.
-- `helm.go` - `helm` subcommand group. Parent command for Helm-related utilities.
-- `helm_images.go` - `helm images` subcommand. Pulls and renders Helm charts, extracts image references, writes an airgapper image config YAML ready for `airgapper sync`.
-- `version.go` - `version` subcommand. Prints version, commit SHA, build date (injected via ldflags).
+- `root.go` - Root cobra command.
+  Defines global persistent flags: `--config`, `--credentials`, `--debug`, `--dry-run`, `--log-format`, `--dry-run-log`, `--timeout`.
+  Resolves each flag against its `AIRGAPPER_*` environment variable (explicit flag wins).
+  Initializes logging.
+  Provides `withRunTimeout`, which bounds a command's context by `--timeout` (0 = no timeout).
+- `sync.go` - `sync` subcommand.
+  Loads config, creates credential store, constructs the transporters, creates sync engine, runs engine, prints results, returns exit code.
+- `helm.go` - `helm` subcommand group.
+  Parent command for Helm-related utilities.
+- `helm_images.go` - `helm images` subcommand.
+  Pulls and renders Helm charts, extracts image references, writes an airgapper image config YAML ready for `airgapper sync`.
+- `version.go` - `version` subcommand.
+  Prints version, commit SHA, build date (injected via ldflags).
 
 **Design pattern**: Command pattern (each cobra subcommand encapsulates a complete action).
 
 **Key decisions**:
 
 - The CLI layer is the **composition root** - it wires all dependencies together.
-- The CLI layer is the **only place** that logs errors to the user. Lower layers return errors.
+- The CLI layer is the **only place** that logs errors to the user.
+  Lower layers return errors.
 - Exit code mapping: all resources synced → 0, any failure → 1, config/usage error → 2.
 
 ### Block 2: Config Loader (`internal/config/`)
@@ -94,17 +115,22 @@ Layer 3 (Domain) depends on nothing. Layer 4 (Infrastructure) implements interfa
 
 **Components**:
 
-- `loader.go` - Discovers `*.airgapper.yaml` / `*.airgapper.yml` files in the config folder. Merges multiple files by appending resource lists. Uses `gopkg.in/yaml.v3` for parsing.
+- `loader.go` - Discovers `*.airgapper.yaml` / `*.airgapper.yml` files in the config folder.
+  Merges multiple files by appending resource lists.
+  Uses `gopkg.in/yaml.v3` for parsing.
 - `types.go` - Typed Go structs for config file content (mirrors the YAML schema).
 - `validate.go` - Validates the merged config: required fields, valid enum values, valid regex patterns, no conflicting settings.
 
-**Merge strategy**: When multiple config files are found, their `resources` arrays are concatenated. Scanner definitions and credential definitions are merged by name (last wins with a warning on duplicates).
+**Merge strategy**: When multiple config files are found, their `resources` arrays are concatenated.
+Scanner definitions and credential definitions are merged by name (last wins with a warning on duplicates).
 
-**Config file naming**: Files must match `*.airgapper.yaml` or `*.airgapper.yml`. This replaces the Python version's `*.cnairgapper.yaml` pattern - but we also accept `*.cnairgapper.yaml` for backward compatibility.
+**Config file naming**: Files must match `*.airgapper.yaml` or `*.airgapper.yml`.
+This replaces the Python version's `*.cnairgapper.yaml` pattern - but we also accept `*.cnairgapper.yaml` for backward compatibility.
 
 ### Block 3: Domain Core (`internal/domain/`)
 
-**Purpose**: Define the language of the application - types, interfaces, errors. This is the heart of the hexagonal architecture.
+**Purpose**: Define the language of the application - types, interfaces, errors.
+This is the heart of the hexagonal architecture.
 
 **Components**:
 
@@ -115,7 +141,9 @@ Layer 3 (Domain) depends on nothing. Layer 4 (Infrastructure) implements interfa
 - `credential_store.go` - `CredentialStore` interface.
 - `errors.go` - Sentinel errors and custom error types.
 
-**Zero-dependency rule**: This package imports only the Go standard library. No third-party packages. No other internal packages.
+**Zero-dependency rule**: This package imports only the Go standard library.
+No third-party packages.
+No other internal packages.
 
 ### Block 4: Sync Engine (`internal/sync/`)
 
@@ -123,7 +151,8 @@ Layer 3 (Domain) depends on nothing. Layer 4 (Infrastructure) implements interfa
 
 **Components**:
 
-- `engine.go` - Main orchestrator. Iterates resources, selects transporters, runs scanners, aggregates results.
+- `engine.go` - Main orchestrator.
+  Iterates resources, selects transporters, runs scanners, aggregates results.
 - `result.go` - Result aggregation and reporting helpers.
 
 **Workflow per resource**:
@@ -142,7 +171,8 @@ For each resource:
   4. Aggregate results for the resource
 ```
 
-**Concurrency**: Resources are synced concurrently using `errgroup.Group` with a configurable concurrency limit. Versions within a single resource are synced sequentially to avoid overwhelming a single registry.
+**Concurrency**: Resources are synced concurrently using `errgroup.Group` with a configurable concurrency limit.
+Versions within a single resource are synced sequentially to avoid overwhelming a single registry.
 
 ### Block 5: Transport Layer (`internal/transport/`)
 
@@ -156,7 +186,8 @@ For each resource:
 - `helm/` - Helm chart transporter.
 - `git/` - Git repository transporter.
 
-Each sub-package implements the `domain.Transporter` interface. See [Transport Layer Design](#transport-layer-design) for details.
+Each sub-package implements the `domain.Transporter` interface.
+See [Transport Layer Design](#transport-layer-design) for details.
 
 ### Block 6: Credential Store (`internal/credentials/`)
 
@@ -164,7 +195,8 @@ Each sub-package implements the `domain.Transporter` interface. See [Transport L
 
 **Components**:
 
-- `store.go` - `FileStore` struct implementing `domain.CredentialStore`. Loads YAML files, indexes credentials by name and type.
+- `store.go` - `FileStore` struct implementing `domain.CredentialStore`.
+  Loads YAML files, indexes credentials by name and type.
 - `resolver.go` - Resolution logic: match by explicit reference name, or fall back to hostname matching.
 
 See [Credential Management](#credential-management) for details.
@@ -175,7 +207,8 @@ See [Credential Management](#credential-management) for details.
 
 **Components**:
 
-- `scanner.go` - `CommandScanner` struct implementing `domain.Scanner`. Executes a parameterized shell command, checks exit code, captures output.
+- `scanner.go` - `CommandScanner` struct implementing `domain.Scanner`.
+  Executes a parameterized shell command, checks exit code, captures output.
 
 See [Scanner Integration](#scanner-integration) for details.
 
@@ -185,7 +218,9 @@ See [Scanner Integration](#scanner-integration) for details.
 
 **Components**:
 
-- `logger.go` - Creates `slog.Logger` with JSON handler. Sets log level from config. Provides helper for creating child loggers with contextual attributes.
+- `logger.go` - Creates `slog.Logger` with JSON handler.
+  Sets log level from config.
+  Provides helper for creating child loggers with contextual attributes.
 
 ---
 
@@ -217,7 +252,8 @@ type Transporter interface {
 - `Sync` must be idempotent: calling it twice with the same input produces the same result.
 - `Sync` must respect `SyncOptions.DryRun` - when true, it must not modify the destination.
 - `Exists` must not modify any state.
-- `ListVersions` must return all available versions, unsorted. The caller handles filtering and regex matching.
+- `ListVersions` must return all available versions, unsorted.
+  The caller handles filtering and regex matching.
 - All methods must respect `ctx` cancellation.
 
 ### Scanner Interface
@@ -258,7 +294,8 @@ type CredentialStore interface {
 
 - `Resolve` returns `nil, nil` when no matching credential exists (anonymous access).
 - `ResolveByRef` returns `domain.ErrNotFound` when the reference does not exist for the requested type.
-- Credentials must never be logged. The store must not expose secrets in error messages.
+- Credentials must never be logged.
+  The store must not expose secrets in error messages.
 
 ---
 
@@ -462,7 +499,8 @@ git:
 
 ### Resolution Algorithm
 
-1. **By reference**: If a resource specifies `source_credentials_ref` or `target_credentials_ref`, look up the credential by name. Error if not found.
+1. **By reference**: If a resource specifies `source_credentials_ref` or `target_credentials_ref`, look up the credential by name.
+   Error if not found.
 2. **By hostname**: If no explicit reference, extract the hostname from the endpoint URL and search for a credential whose `name` matches the hostname.
 3. **Anonymous**: If no credential is found, proceed with anonymous access (no auth headers).
 
@@ -501,7 +539,8 @@ The git transporter reads that env var to obtain the `Authorization` header for 
 - `myrepo/myimage` → `registry-1.docker.io/myrepo/myimage`
 - `registry.example.com/myrepo/myimage` → as-is
 
-**Multi-arch handling**: By default, copy all platforms from a manifest list. If the source has a multi-arch manifest, the destination receives the same multi-arch manifest.
+**Multi-arch handling**: By default, copy all platforms from a manifest list.
+If the source has a multi-arch manifest, the destination receives the same multi-arch manifest.
 
 ### Helm Transporter (`internal/transport/helm/`)
 
@@ -521,7 +560,8 @@ The git transporter reads that env var to obtain the `Authorization` header for 
 3. **Existence check**: Parse `index.yaml` for the version.
 4. **List versions**: Parse `index.yaml` for all chart versions.
 
-**Registry type detection**: If the registry URL starts with `oci://` or resolves to an OCI distribution API, use OCI mode. If the URL points to an `index.yaml`-based repository (detected by fetching `/index.yaml`), use legacy mode.
+**Registry type detection**: If the registry URL starts with `oci://` or resolves to an OCI distribution API, use OCI mode.
+If the URL points to an `index.yaml`-based repository (detected by fetching `/index.yaml`), use legacy mode.
 
 ### Git Transporter (`internal/transport/git/`)
 
@@ -534,8 +574,10 @@ The git transporter reads that env var to obtain the `Authorization` header for 
     - For SSH: use `ssh.PublicKeys` with the private key from the credential store.
 2. **Add remote**: Add the destination as a second remote (`target`).
 3. **Push**: Push the ref to the `target` remote.
-    - `skip`: Check if ref exists at destination first. If yes, skip.
-    - `push`: Standard push. Fails if destination ref is ahead.
+    - `skip`: Check if ref exists at destination first.
+      If yes, skip.
+    - `push`: Standard push.
+      Fails if destination ref is ahead.
     - `force`: Force push (equivalent to `git push --force`).
 4. **Cleanup**: Remove the temp directory.
 
@@ -553,7 +595,8 @@ The git transporter reads that env var to obtain the `Authorization` header for 
 
 ### Generic Command Scanner
 
-The scanner is a generic external command executor. It replaces all tool-specific scanner implementations from the Python version.
+The scanner is a generic external command executor.
+It replaces all tool-specific scanner implementations from the Python version.
 
 **Configuration**:
 
@@ -567,13 +610,13 @@ scanners:
 
 **Placeholders** (substituted at runtime):
 
-| Placeholder    | Description                         | Example                                |
-|----------------|-------------------------------------|----------------------------------------|
-| `{registry}`   | Registry hostname                   | `registry.example.com`                 |
-| `{repository}` | Repository path                     | `team/app`                             |
-| `{tag}`        | Image tag / chart version / git ref | `v1.0.0`                               |
-| `{source}`     | Full source reference               | `registry.example.com/team/app:v1.0.0` |
-| `{type}`       | Resource type                       | `image`, `helm`, `git`                 |
+| Placeholder     | Description                          | Example                                 |
+| --------------- | ------------------------------------ | --------------------------------------- |
+| `{registry}`    | Registry hostname                    | `registry.example.com`                  |
+| `{repository}`  | Repository path                      | `team/app`                              |
+| `{tag}`         | Image tag / chart version / git ref  | `v1.0.0`                                |
+| `{source}`      | Full source reference                | `registry.example.com/team/app:v1.0.0`  |
+| `{type}`        | Resource type                        | `image`, `helm`, `git`                  |
 
 **Execution**:
 
@@ -611,14 +654,22 @@ errors (wrapped)
 
 ### Error Propagation Rules
 
-1. **Domain layer**: Define sentinel errors. Never log.
-2. **Transport layer**: Wrap errors with context (`fmt.Errorf("pull image %s: %w", ref, err)`). Never log.
-3. **Sync engine**: Catch errors, record in `VersionResult.Error`. Log at WARN level. Continue processing.
-4. **CLI layer**: Print final summary. Log errors at ERROR level. Set exit code.
+1. **Domain layer**: Define sentinel errors.
+   Never log.
+2. **Transport layer**: Wrap errors with context (`fmt.Errorf("pull image %s: %w", ref, err)`).
+   Never log.
+3. **Sync engine**: Catch errors, record in `VersionResult.Error`.
+   Log at WARN level.
+   Continue processing.
+4. **CLI layer**: Print final summary.
+   Log errors at ERROR level.
+   Set exit code.
 
 ### Partial Failure Handling
 
-The sync engine never stops on a single failure. It processes all resources and all versions, recording each outcome. The final exit code reflects whether any failures occurred.
+The sync engine never stops on a single failure.
+It processes all resources and all versions, recording each outcome.
+The final exit code reflects whether any failures occurred.
 
 ---
 
@@ -645,24 +696,24 @@ JSON structured logging via `log/slog`:
 
 Follow [OTel semantic conventions](https://opentelemetry.io/docs/specs/semconv/) for attribute names:
 
-| Attribute     | Convention             | Example                    |
-|---------------|------------------------|----------------------------|
-| Resource type | `resource.type`        | `image`                    |
-| Source        | `resource.source`      | `docker.io/library/ubuntu` |
-| Destination   | `resource.destination` | `internal.corp/ubuntu`     |
-| Version       | `resource.version`     | `22.04`                    |
-| Duration      | `duration_ms`          | `4523`                     |
-| Error         | `error.message`        | `authentication failed`    |
-| Registry      | `registry.host`        | `registry-1.docker.io`     |
+| Attribute      | Convention              | Example                     |
+| -------------- | ----------------------- | --------------------------- |
+| Resource type  | `resource.type`         | `image`                     |
+| Source         | `resource.source`       | `docker.io/library/ubuntu`  |
+| Destination    | `resource.destination`  | `internal.corp/ubuntu`      |
+| Version        | `resource.version`      | `22.04`                     |
+| Duration       | `duration_ms`           | `4523`                      |
+| Error          | `error.message`         | `authentication failed`     |
+| Registry       | `registry.host`         | `registry-1.docker.io`      |
 
 ### Log Levels
 
-| Level   | Usage                                                                                |
-|---------|--------------------------------------------------------------------------------------|
-| `DEBUG` | Transport protocol details, HTTP requests/responses (redacted), config parsing steps |
-| `INFO`  | Resource sync started/completed, version synced/skipped, scanner results             |
-| `WARN`  | Version sync failed (non-fatal), deprecated config fields, duplicate credentials     |
-| `ERROR` | Fatal errors that prevent the tool from operating (config invalid, no resources)     |
+| Level    | Usage                                                                                 |
+| -------- | ------------------------------------------------------------------------------------- |
+| `DEBUG`  | Transport protocol details, HTTP requests/responses (redacted), config parsing steps  |
+| `INFO`   | Resource sync started/completed, version synced/skipped, scanner results              |
+| `WARN`   | Version sync failed (non-fatal), deprecated config fields, duplicate credentials      |
+| `ERROR`  | Fatal errors that prevent the tool from operating (config invalid, no resources)      |
 
 ### Debug Mode
 
@@ -699,7 +750,8 @@ if err := g.Wait(); err != nil {
 
 ### Version-Level Sequentiality
 
-Within a single resource, versions are synced sequentially. Reasons:
+Within a single resource, versions are synced sequentially.
+Reasons:
 
 1. Avoid overwhelming a single registry with parallel requests.
 2. Registry rate limits are per-host; parallel version requests to the same host may trigger throttling.
@@ -707,7 +759,9 @@ Within a single resource, versions are synced sequentially. Reasons:
 
 ### Context Cancellation
 
-All operations respect `context.Context`. A SIGINT/SIGTERM cancels the root context, which propagates to all in-flight operations. Each transporter must check `ctx.Done()` and return promptly.
+All operations respect `context.Context`.
+A SIGINT/SIGTERM cancels the root context, which propagates to all in-flight operations.
+Each transporter must check `ctx.Done()` and return promptly.
 
 ---
 
@@ -715,7 +769,8 @@ All operations respect `context.Context`. A SIGINT/SIGTERM cancels the root cont
 
 ### Unit Tests
 
-Every package gets `_test.go` files alongside the source. Table-driven tests are the default pattern.
+Every package gets `_test.go` files alongside the source.
+Table-driven tests are the default pattern.
 
 **Domain types**: Test validation, equality, string formatting.
 **Config loader**: Test YAML parsing, merging, validation (use testdata files).
@@ -783,11 +838,11 @@ Global flags:
 
 ### Exit Codes
 
-| Code | Meaning                                                      |
-|------|--------------------------------------------------------------|
-| 0    | All resources synced successfully (or skipped per push_mode) |
-| 1    | At least one resource/version failed to sync                 |
-| 2    | Configuration or usage error (invalid flags, missing config) |
+| Code  | Meaning                                                       |
+| ----- | ------------------------------------------------------------- |
+| 0     | All resources synced successfully (or skipped per push_mode)  |
+| 1     | At least one resource/version failed to sync                  |
+| 2     | Configuration or usage error (invalid flags, missing config)  |
 
 ### Output
 

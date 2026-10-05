@@ -8,8 +8,7 @@ If you believe you've found a security vulnerability, please follow these steps 
 ### Direct Reporting Process
 
 1. **Do not disclose the vulnerability publicly** until it has been addressed by the maintainers.
-2. **Send details of the vulnerability** to [engineering@fullstacks.eu](mailto:engineering@fullstacks.eu) with the following
-   information:
+2. **Send details of the vulnerability** to [engineering@fullstacks.eu](mailto:engineering@fullstacks.eu) with the following information:
     - A clear description of the vulnerability
     - Steps to reproduce the issue
     - Potential impact of the vulnerability
@@ -63,6 +62,5 @@ Security updates will be announced through:
 
 ## Acknowledgments
 
-We appreciate the responsible disclosure of security vulnerabilities and will acknowledge researchers who report valid
-security issues.
+We appreciate the responsible disclosure of security vulnerabilities and will acknowledge researchers who report valid security issues.
 Thank you for helping keep Universal Airgapper and its users secure!

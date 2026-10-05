@@ -1,6 +1,7 @@
 # Contributing to Universal Airgapper
 
-Thank you for your interest in contributing to Universal Airgapper. This document covers everything you need to get started.
+Thank you for your interest in contributing to Universal Airgapper.
+This document covers everything you need to get started.
 
 ## Table of Contents
 
@@ -30,11 +31,14 @@ Thank you for your interest in contributing to Universal Airgapper. This documen
 
 1. Fork the repository on GitHub.
 2. Clone your fork locally:
+
    ```shell
    git clone https://github.com/YOUR-USERNAME/universal-airgapper.git
    cd universal-airgapper
    ```
+
 3. Create a branch for your changes:
+
    ```shell
    git checkout -b task/your-feature-name
    ```
@@ -125,9 +129,11 @@ Universal Airgapper follows **Hexagonal Architecture (Ports & Adapters)**:
 - **Outbound adapters** (`internal/transport/*`, `internal/scanner/`, `internal/credentials/`) implement domain interfaces.
 - Dependencies always point **inward** -- adapters import domain, never the reverse.
 
-The **Strategy pattern** allows each resource type (image, helm, git) to have its own Transporter implementation. The **Factory pattern** selects the right transporter at runtime.
+The **Strategy pattern** allows each resource type (image, helm, git) to have its own Transporter implementation.
+The **Factory pattern** selects the right transporter at runtime.
 
 For the full architecture documentation, see:
+
 - [docs/architecture/c4-model.md](docs/architecture/c4-model.md) -- C4 architecture diagrams
 - [docs/architecture/design.md](docs/architecture/design.md) -- detailed design decisions
 
@@ -143,19 +149,24 @@ For the full architecture documentation, see:
 
 - Follow [Effective Go](https://go.dev/doc/effective_go) and [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments).
 - Exported names get doc comments starting with the name:
+
   ```go
   // Client manages connections to a container registry.
   type Client struct { ... }
   ```
-- Use descriptive variable names. Avoid single-letter names outside very short scopes (loop indices, etc.).
+
+- Use descriptive variable names.
+  Avoid single-letter names outside very short scopes (loop indices, etc.).
 - Keep interfaces small -- 1 to 3 methods.
 
 ### Error Handling
 
-- Always handle errors immediately. Never discard with `_` unless you document why.
+- Always handle errors immediately.
+  Never discard with `_` unless you document why.
 - Wrap errors with context: `fmt.Errorf("pull %s: %w", ref, err)`.
 - Use sentinel errors (`var ErrNotFound = errors.New("not found")`) for expected conditions.
-- Log errors at the top of the call stack (CLI layer). Lower packages return errors.
+- Log errors at the top of the call stack (CLI layer).
+  Lower packages return errors.
 
 ### General
 
@@ -178,6 +189,7 @@ go test -v -run TestFoo ./...     # Run a specific test
 
 - Place tests alongside source: `foo.go` -> `foo_test.go`.
 - Use **table-driven tests** as the default pattern:
+
   ```go
   func TestParseImageEndpoint(t *testing.T) {
       t.Parallel()
@@ -202,10 +214,12 @@ go test -v -run TestFoo ./...     # Run a specific test
       }
   }
   ```
+
 - Use `t.Parallel()` for independent tests.
 - Use `t.Helper()` in test helper functions.
 - Use `testify/assert` and `testify/require` for assertions.
-- Mock external services via interfaces, not concrete types. Use `httptest.NewServer` for HTTP dependencies.
+- Mock external services via interfaces, not concrete types.
+  Use `httptest.NewServer` for HTTP dependencies.
 - Gate integration tests behind `//go:build integration`.
 
 ## Adding a New Transport Type
@@ -213,12 +227,15 @@ go test -v -run TestFoo ./...     # Run a specific test
 To add support for a new artifact type (e.g., OPA bundles):
 
 1. **Define the resource type** in `internal/domain/enums.go`:
+
    ```go
    const ResourceTypeOPA ResourceType = "opa"
    ```
+
    Update the `Valid()` method.
 
 2. **Implement the Transporter interface** in a new package `internal/transport/opa/`:
+
    ```go
    package opa
 
@@ -233,6 +250,7 @@ To add support for a new artifact type (e.g., OPA bundles):
    ```
 
 3. **Register in the CLI** (`internal/cli/sync.go`):
+
    ```go
    opaT := opa.New(logger)
    factory := transport.NewFactory(imageT, helmT, gitT, opaT)
@@ -244,7 +262,8 @@ To add support for a new artifact type (e.g., OPA bundles):
 
 ## Adding a New Scanner
 
-Scanners are **generic** -- no tool-specific code is needed. Just configure a new scanner in your YAML config:
+Scanners are **generic** -- no tool-specific code is needed.
+Just configure a new scanner in your YAML config:
 
 ```yaml
 scanners:
@@ -270,7 +289,8 @@ No code changes required.
 
 ## Commit Conventions
 
-We use conventional commits. Commit messages must match this pattern:
+We use conventional commits.
+Commit messages must match this pattern:
 
 ```
 ^(feat|fix|try|maintain)!?(\(.*\))?: .+
@@ -278,12 +298,12 @@ We use conventional commits. Commit messages must match this pattern:
 
 ### Types
 
-| Type       | When to use                                    |
-|------------|------------------------------------------------|
-| `feat`     | A new feature                                  |
-| `fix`      | A bug fix                                      |
-| `try`      | Experimental changes                           |
-| `maintain` | Maintenance: refactoring, dependencies, CI, docs |
+| Type        | When to use                                       |
+| ----------- | ------------------------------------------------- |
+| `feat`      | A new feature                                     |
+| `fix`       | A bug fix                                         |
+| `try`       | Experimental changes                              |
+| `maintain`  | Maintenance: refactoring, dependencies, CI, docs  |
 
 ### Format
 
@@ -305,7 +325,8 @@ A breaking change indicator `!` signals backward-incompatible changes.
 
 ## Pull Request Guidelines
 
-1. **One concern per PR.** Keep changes focused.
+1. **One concern per PR.**
+   Keep changes focused.
 2. **Branch from `main`**, use the naming convention `task/<description>`.
 3. **Ensure all tests pass**: `go test -race ./...`
 4. **Ensure lint passes**: `golangci-lint run`
@@ -319,4 +340,5 @@ A breaking change indicator `!` signals backward-incompatible changes.
 
 ## Code of Conduct
 
-Please be respectful and considerate of others when contributing. We aim to foster an inclusive and welcoming community.
+Please be respectful and considerate of others when contributing.
+We aim to foster an inclusive and welcoming community.

@@ -3,15 +3,14 @@
 A Go CLI tool for synchronizing container images, Helm charts, and Git repositories across air-gapped environments.
 
 <!-- Badges -->
-![Build](https://img.shields.io/github/actions/workflow/status/fullstacks-gmbh/airgapper/ci.yml?branch=main)
-![Release](https://img.shields.io/github/v/release/fullstacks-gmbh/airgapper)
-![License](https://img.shields.io/github/license/fullstacks-gmbh/airgapper)
+![Build](https://img.shields.io/github/actions/workflow/status/fullstacks-gmbh/airgapper/ci.yml?branch=main) ![Release](https://img.shields.io/github/v/release/fullstacks-gmbh/airgapper) ![License](https://img.shields.io/github/license/fullstacks-gmbh/airgapper)
 
 ---
 
 ## What It Does
 
-Universal Airgapper reads a YAML configuration file listing artifacts (container images, Helm charts, Git repos) with their source and destination, then copies each artifact from source to destination. It is designed for environments where registries sit behind an air gap and artifacts must be moved in a controlled, automated way.
+Universal Airgapper reads a YAML configuration file listing artifacts (container images, Helm charts, Git repos) with their source and destination, then copies each artifact from source to destination.
+It is designed for environments where registries sit behind an air gap and artifacts must be moved in a controlled, automated way.
 
 ## Features
 
@@ -33,7 +32,44 @@ Universal Airgapper reads a YAML configuration file listing artifacts (container
 
 ### Install
 
-Download the latest binary from [GitHub Releases](https://github.com/fullstacks-gmbh/airgapper/releases), or build from source:
+The install script downloads the release archive for your platform, verifies its SHA-256 checksum against the published checksums file, and installs the binary.
+When [cosign](https://docs.sigstore.dev/cosign/) is on your `PATH`, it also verifies the archive's signature against [`cosign.pub`](cosign.pub) before installing.
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/fullstacks-gmbh/airgapper/main/install.sh | sh
+```
+
+The script asks for confirmation before it writes anything.
+It needs `curl`, `tar`, and `jq`, plus one of `sha256sum`, `shasum`, or `openssl` for the checksum verification.
+
+Without `AIRGAPPER_INSTALL_DIR`, it installs into the first of `~/.local/bin`, `~/bin`, or `/usr/local/bin` that exists and is on your `PATH`.
+
+Control the script with these environment variables.
+
+| Variable                   | Default     | Effect                                                      |
+| -------------------------- | ----------- | ----------------------------------------------------------- |
+| `AIRGAPPER_VERSION`        | latest      | Install a specific release, with or without the `v` prefix  |
+| `AIRGAPPER_INSTALL_DIR`    | auto        | Target directory, created if missing                        |
+| `AIRGAPPER_OS`             | `uname -s`  | Override the platform (`linux`, `darwin`, `windows`)        |
+| `AIRGAPPER_ARCH`           | `uname -m`  | Override the architecture (`amd64`, `arm64`)                |
+| `AIRGAPPER_YES`            | `0`         | Skip the confirmation prompt                                |
+| `AIRGAPPER_QUIET`          | `0`         | Suppress progress output                                    |
+| `AIRGAPPER_SKIP_CHECKSUM`  | `0`         | Install without checksum verification, not recommended      |
+| `AIRGAPPER_SKIP_SIGNATURE` | `0`         | Skip signature verification even when cosign is installed   |
+| `AIRGAPPER_COSIGN_KEY`     | repo key    | Local path or URL of the public key to verify against       |
+| `AIRGAPPER_COSIGN_OFFLINE` | `0`         | Verify without contacting the Rekor transparency log        |
+| `NO_COLOR`                 | unset       | Disable colored output                                      |
+
+Signature verification is best effort.
+The script skips it when cosign is missing or when the release carries no signature bundle, and it fails the install when cosign is present and verification does not pass.
+
+```shell
+# Pin a version and install unattended into a custom directory
+curl -fsSL https://raw.githubusercontent.com/fullstacks-gmbh/airgapper/main/install.sh \
+  | AIRGAPPER_VERSION=1.4.3 AIRGAPPER_YES=1 AIRGAPPER_INSTALL_DIR=~/.local/bin sh
+```
+
+Alternatively, download an archive from [GitHub Releases](https://github.com/fullstacks-gmbh/airgapper/releases) or build from source:
 
 ```shell
 # Build from source (requires Go 1.26.3+)
@@ -45,6 +81,55 @@ Or use the container image:
 ```shell
 docker pull ghcr.io/fullstacks-gmbh/airgapper:latest
 ```
+
+### Verify signatures
+
+Release archives, the checksums file, and the container image are signed with [cosign](https://docs.sigstore.dev/cosign/) using the key pair whose public half is [`cosign.pub`](cosign.pub) in this repository.
+The install script performs this check automatically when cosign is available; the steps below cover manual verification of a downloaded artifact.
+
+Each signed artifact has a matching `.sigstore.json` bundle in the release assets.
+
+```shell
+VERSION=1.4.3
+BASE=https://github.com/fullstacks-gmbh/airgapper/releases/download/v${VERSION}
+ARCHIVE=airgapper_${VERSION}_linux_amd64.tar.gz
+
+# Public key, archive, and signature bundle
+curl -fsSLO https://raw.githubusercontent.com/fullstacks-gmbh/airgapper/main/cosign.pub
+curl -fsSLO "${BASE}/${ARCHIVE}"
+curl -fsSLO "${BASE}/${ARCHIVE}.sigstore.json"
+
+cosign verify-blob \
+  --key cosign.pub \
+  --bundle "${ARCHIVE}.sigstore.json" \
+  "${ARCHIVE}"
+```
+
+A successful run prints `Verified OK`.
+Any other output means the archive does not match the signature and must not be used.
+
+Verify the checksums file the same way, then check the archive hashes against it:
+
+```shell
+curl -fsSLO "${BASE}/airgapper_${VERSION}_checksums.txt"
+curl -fsSLO "${BASE}/airgapper_${VERSION}_checksums.txt.sigstore.json"
+
+cosign verify-blob \
+  --key cosign.pub \
+  --bundle "airgapper_${VERSION}_checksums.txt.sigstore.json" \
+  "airgapper_${VERSION}_checksums.txt"
+
+sha256sum --check --ignore-missing "airgapper_${VERSION}_checksums.txt"
+```
+
+Verify the container image by tag or by digest:
+
+```shell
+cosign verify --key cosign.pub ghcr.io/fullstacks-gmbh/airgapper:1.4.3
+```
+
+Signatures are also recorded in the public Rekor transparency log, which cosign contacts during verification.
+On hosts without internet access, add `--insecure-ignore-tlog=true` to verify against the public key alone.
 
 ### Configure
 
@@ -117,9 +202,8 @@ resources:
       - "16\\..*"             # regex: all 16.x versions
 ```
 
-The destination OCI artifact name is automatically derived from `Chart.yaml`,
-which also handles vendor artifacts whose repository name differs from the real
-chart name. Set `destination_chart` only for an explicit name override.
+The destination OCI artifact name is automatically derived from `Chart.yaml`, which also handles vendor artifacts whose repository name differs from the real chart name.
+Set `destination_chart` only for an explicit name override.
 
 ### Git Resources
 
@@ -141,7 +225,8 @@ resources:
 
 ### Scanner Configuration
 
-Define external scanner commands that run before an artifact is pushed. The scanner is generic -- any command-line tool that returns an exit code can be used.
+Define external scanner commands that run before an artifact is pushed.
+The scanner is generic -- any command-line tool that returns an exit code can be used.
 
 ```yaml
 scanners:
@@ -161,13 +246,13 @@ resources:
 
 **Available placeholders** in the scanner command:
 
-| Placeholder    | Description                                                    |
-|----------------|----------------------------------------------------------------|
-| `{registry}`   | Registry hostname (e.g., `registry-1.docker.io`)               |
-| `{repository}` | Repository path (e.g., `library/ubuntu`)                       |
-| `{tag}`        | Tag / version / ref being synced                               |
-| `{source}`     | Full source reference (e.g., `docker.io/library/ubuntu:22.04`) |
-| `{type}`       | Resource type (`image`, `helm`, `git`)                         |
+| Placeholder     | Description                                                     |
+| --------------- | --------------------------------------------------------------- |
+| `{registry}`    | Registry hostname (e.g., `registry-1.docker.io`)                |
+| `{repository}`  | Repository path (e.g., `library/ubuntu`)                        |
+| `{tag}`         | Tag / version / ref being synced                                |
+| `{source}`      | Full source reference (e.g., `docker.io/library/ubuntu:22.04`)  |
+| `{type}`        | Resource type (`image`, `helm`, `git`)                          |
 
 ### Full Example
 
@@ -266,24 +351,25 @@ airgapper version         Print version, commit, and build date
 
 ### Global Flags
 
-| Flag            | Short | Env Var                 | Default | Description                              |
-|-----------------|-------|-------------------------|---------|------------------------------------------|
-| `--config`      | `-c`  | `AIRGAPPER_CONFIG`      | (none)  | Path to config file or folder            |
-| `--credentials` |       | `AIRGAPPER_CREDENTIALS` | (none)  | Path to credentials file or folder       |
-| `--debug`       | `-d`  | `AIRGAPPER_DEBUG`       | `false` | Enable debug logging (JSON, DEBUG level) |
-| `--dry-run`     |       | `AIRGAPPER_DRY_RUN`     | `false` | Disable all write/push operations        |
-| `--log-format`  |       | `AIRGAPPER_LOG_FORMAT`  | `json`  | Log format: `json` or `text`             |
-| `--dry-run-log` |       | `AIRGAPPER_DRY_RUN_LOG` | (auto)  | Path for the dry-run log file            |
-| `--timeout`     |       | `AIRGAPPER_TIMEOUT`     | `0`     | Overall run timeout in seconds (0 = off) |
+| Flag             | Short  | Env Var                  | Default  | Description                               |
+| ---------------- | ------ | ------------------------ | -------- | ----------------------------------------- |
+| `--config`       | `-c`   | `AIRGAPPER_CONFIG`       | (none)   | Path to config file or folder             |
+| `--credentials`  |        | `AIRGAPPER_CREDENTIALS`  | (none)   | Path to credentials file or folder        |
+| `--debug`        | `-d`   | `AIRGAPPER_DEBUG`        | `false`  | Enable debug logging (JSON, DEBUG level)  |
+| `--dry-run`      |        | `AIRGAPPER_DRY_RUN`      | `false`  | Disable all write/push operations         |
+| `--log-format`   |        | `AIRGAPPER_LOG_FORMAT`   | `json`   | Log format: `json` or `text`              |
+| `--dry-run-log`  |        | `AIRGAPPER_DRY_RUN_LOG`  | (auto)   | Path for the dry-run log file             |
+| `--timeout`      |        | `AIRGAPPER_TIMEOUT`      | `0`      | Overall run timeout in seconds (0 = off)  |
 
 ### `helm images` Flags
 
-| Flag                      | Env Var                                        | Required | Description                                                                 |
-|---------------------------|------------------------------------------------|----------|-----------------------------------------------------------------------------|
-| `--output`, `-o`          | `AIRGAPPER_HELM_IMAGES_OUTPUT`                 | yes      | Path to write the generated image config YAML                               |
-| `--target-credentials-ref`| `AIRGAPPER_HELM_IMAGES_TARGET_CREDENTIALS_REF` | yes      | Name of a helm credential entry whose `name` field is the destination registry hostname |
+| Flag                        | Env Var                                         | Required  | Description                                                                              |
+| --------------------------- | ----------------------------------------------- | --------- | ---------------------------------------------------------------------------------------- |
+| `--output`, `-o`            | `AIRGAPPER_HELM_IMAGES_OUTPUT`                  | yes       | Path to write the generated image config YAML                                            |
+| `--target-credentials-ref`  | `AIRGAPPER_HELM_IMAGES_TARGET_CREDENTIALS_REF`  | yes       | Name of a helm credential entry whose `name` field is the destination registry hostname  |
 
-The command reads all `helm` resources from the config, pulls and renders each chart version with its default values, extracts every `image:` reference from the rendered manifests, and writes a ready-to-use airgapper image config YAML to `--output`. The output file can be fed directly to `airgapper sync` to mirror those images into an air-gapped registry.
+The command reads all `helm` resources from the config, pulls and renders each chart version with its default values, extracts every `image:` reference from the rendered manifests, and writes a ready-to-use airgapper image config YAML to `--output`.
+The output file can be fed directly to `airgapper sync` to mirror those images into an air-gapped registry.
 
 ```shell
 airgapper helm images \
@@ -295,11 +381,11 @@ airgapper helm images \
 
 ### Exit Codes
 
-| Code | Meaning                                  |
-|------|------------------------------------------|
-| `0`  | All resources synced successfully        |
-| `1`  | Sync completed with one or more failures |
-| `2`  | Usage or configuration error             |
+| Code  | Meaning                                   |
+| ----- | ----------------------------------------- |
+| `0`   | All resources synced successfully         |
+| `1`   | Sync completed with one or more failures  |
+| `2`   | Usage or configuration error              |
 
 ### Examples
 
@@ -354,7 +440,8 @@ docker run --rm \
 
 ### Kubernetes Job
 
-Mount config via ConfigMap and credentials via Secrets. Example manifests are in `k8s/`.
+Mount config via ConfigMap and credentials via Secrets.
+Example manifests are in `k8s/`.
 
 ```yaml
 apiVersion: batch/v1
@@ -411,7 +498,8 @@ spec:
 
 ### GitHub Actions
 
-Use the reusable workflow from this repository. See [docs/github-actions.md](docs/github-actions.md).
+Use the reusable workflow from this repository.
+See [docs/github-actions.md](docs/github-actions.md).
 
 ```yaml
 jobs:
@@ -425,7 +513,8 @@ jobs:
 
 ### GitLab CI
 
-Use the CI component template. See [docs/gitlab-ci.md](docs/gitlab-ci.md).
+Use the CI component template.
+See [docs/gitlab-ci.md](docs/gitlab-ci.md).
 
 ```yaml
 include:
@@ -498,7 +587,8 @@ golangci-lint run
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, testing guidelines, and commit conventions.
+Contributions are welcome.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, testing guidelines, and commit conventions.
 
 ## License
 

@@ -19,6 +19,7 @@
   packages = [
     pkgs.golangci-lint
     pkgs.goreleaser
+    pkgs.cosign
   ];
 
   # https://devenv.sh/languages/
@@ -72,6 +73,7 @@
       entry = "make fmt";
       language = "system";
       pass_filenames = false;
+      files = "(\\.go|go\\.mod|go\\.sum)$";
     };
     vet = {
       enable = true;
@@ -79,6 +81,7 @@
       entry = "make vet";
       language = "system";
       pass_filenames = false;
+      files = "(\\.go|go\\.mod|go\\.sum)$";
     };
     lint = {
       enable = true;
@@ -86,6 +89,7 @@
       entry = "make lint";
       language = "system";
       pass_filenames = false;
+      files = "(\\.go|go\\.mod|go\\.sum)$";
     };
     test = {
       enable = true;
@@ -93,6 +97,7 @@
       entry = "make test";
       language = "system";
       pass_filenames = false;
+      files = "(\\.go|go\\.mod|go\\.sum)$";
     };
   };
 
