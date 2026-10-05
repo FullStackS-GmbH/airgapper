@@ -62,12 +62,15 @@ require_cmd() {
 
 expand_path() {
   input_path="$1"
+  # Tildes are quoted on purpose here: they are literal patterns to match, not
+  # paths to expand.
+  # shellcheck disable=SC2088
   case "$input_path" in
     "~")
       printf '%s' "$HOME"
       ;;
-    "${HOME}/"*)
-      printf '%s/%s' "$HOME" "${input_path#~/}"
+    "~/"*)
+      printf '%s/%s' "$HOME" "${input_path#"~/"}"
       ;;
     *)
       printf '%s' "$input_path"
@@ -224,6 +227,65 @@ extract_asset_url() {
     ) // empty'
 }
 
+extract_checksums_url() {
+  printf '%s' "$1" | jq -r \
+    'first(
+      .assets[]?.browser_download_url
+      | select(test("checksums\\.txt$"))
+    ) // empty'
+}
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    digest_line=$(sha256sum "$1")
+    printf '%s' "${digest_line%% *}"
+  elif command -v shasum >/dev/null 2>&1; then
+    digest_line=$(shasum -a 256 "$1")
+    printf '%s' "${digest_line%% *}"
+  elif command -v openssl >/dev/null 2>&1; then
+    digest_line=$(openssl dgst -sha256 "$1")
+    printf '%s' "${digest_line##* }"
+  else
+    return 1
+  fi
+}
+
+# Looks up $2 (asset file name) in a GNU coreutils style checksums file ($1).
+expected_checksum() {
+  while IFS= read -r line; do
+    entry_name="${line##* }"
+    case "$entry_name" in
+      "$2"|"*$2")
+        printf '%s' "${line%% *}"
+        return 0
+        ;;
+    esac
+  done < "$1"
+  return 1
+}
+
+verify_checksum() {
+  archive="$1"
+  checksums_url="$2"
+  asset_name="$3"
+  checksums_file="$4"
+
+  curl -fsSL "$checksums_url" -o "$checksums_file" \
+    || fatal "failed to download checksums from '$checksums_url'"
+
+  expected=$(expected_checksum "$checksums_file" "$asset_name") \
+    || fatal "no checksum entry for '$asset_name' in release checksums file"
+
+  actual=$(sha256_file "$archive") \
+    || fatal "no sha256 tool found (install sha256sum, shasum or openssl, or set AIRGAPPER_SKIP_CHECKSUM=1)"
+
+  if [ "$expected" != "$actual" ]; then
+    fatal "checksum mismatch for '$asset_name': expected '$expected', got '$actual'"
+  fi
+
+  log "Checksum verified: $actual"
+}
+
 confirm_install() {
   if is_true "$ASSUME_YES_VALUE"; then
     log "Skipping approval prompt because AIRGAPPER_YES is enabled."
@@ -282,6 +344,16 @@ main() {
   asset_url=$(extract_asset_url "$release_json" "$resolved_os" "$resolved_arch")
   [ -n "$asset_url" ] || fatal "no release archive found for os='$resolved_os' arch='$resolved_arch' in release '$release_tag'"
 
+  asset_name="${asset_url##*/}"
+
+  checksums_url=""
+  if is_true "${AIRGAPPER_SKIP_CHECKSUM:-0}"; then
+    log "Checksum verification disabled via AIRGAPPER_SKIP_CHECKSUM."
+  else
+    checksums_url=$(extract_checksums_url "$release_json")
+    [ -n "$checksums_url" ] || fatal "no checksums file in release '$release_tag'. Set AIRGAPPER_SKIP_CHECKSUM=1 to install without verification"
+  fi
+
   log "Calculated installation settings:"
   log "  Repository:   ${REPO_OWNER}/${REPO_NAME}"
   log "  Version tag:  $release_tag"
@@ -290,6 +362,9 @@ main() {
   log "  Arch:         $resolved_arch"
   log "  Install dir:  $install_dir"
   log "  Archive URL:  $asset_url"
+  if [ -n "$checksums_url" ]; then
+    log "  Checksums:    $checksums_url"
+  fi
 
   confirm_install
 
@@ -301,7 +376,7 @@ main() {
   [ -w "$install_dir" ] || fatal "install directory '$install_dir' is not writable"
 
   tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/airgapper-install.XXXXXX")
-  archive_path="$tmp_dir/airgapper.tar.gz"
+  archive_path="$tmp_dir/$asset_name"
 
   cleanup() {
     rm -rf "$tmp_dir"
@@ -309,7 +384,16 @@ main() {
   trap cleanup EXIT INT TERM
 
   log "Downloading release archive..."
-  curl -fL "$asset_url" -o "$archive_path"
+  if is_true "$QUIET_VALUE"; then
+    curl -fsSL "$asset_url" -o "$archive_path"
+  else
+    curl -fL "$asset_url" -o "$archive_path"
+  fi
+
+  if [ -n "$checksums_url" ]; then
+    log "Verifying checksum..."
+    verify_checksum "$archive_path" "$checksums_url" "$asset_name" "$tmp_dir/checksums.txt"
+  fi
 
   binary_file="$BINARY_NAME"
   if [ "$resolved_os" = "windows" ]; then
@@ -328,8 +412,11 @@ main() {
 
   target_binary="$install_dir/$binary_file"
   log "Installing binary to: $target_binary"
-  mv "$source_binary" "$target_binary"
-  chmod 0755 "$target_binary"
+  chmod 0755 "$source_binary"
+  # Staged inside the install dir first so a cross-device copy never leaves a
+  # partially written binary on PATH.
+  mv "$source_binary" "$target_binary.new"
+  mv "$target_binary.new" "$target_binary"
 
   log "Installation complete."
   log "Run '$BINARY_NAME --help' to verify the installation."
