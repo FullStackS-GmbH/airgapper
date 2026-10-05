@@ -1,5 +1,9 @@
+# syntax=docker/dockerfile:1
 # Stage 1: Build the Go binary
-FROM golang:1.26.3-alpine AS builder
+# Pinned to BUILDPLATFORM so this stage always runs natively on the runner.
+# The build is CGO-free, so Go cross-compiles to TARGETARCH far faster than
+# running an emulated arm64 toolchain under QEMU.
+FROM --platform=$BUILDPLATFORM golang:1.26.3-alpine AS builder
 
 ARG APP_VERSION="dev"
 ARG APP_COMMIT_SHA="unknown"
@@ -10,7 +14,8 @@ WORKDIR /build
 
 # Copy dependency files first for layer caching
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 # Copy source code and build
 COPY . .
@@ -20,7 +25,9 @@ ARG TARGETARCH
 # Build tags required by go.podman.io/image/v5 (containers/container-libs).
 # - containers_image_openpgp:        avoid gpgme CGO dep
 # - exclude_graphdriver_*:           skip storage backends (only docker:// transport is used)
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -tags=containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay \
     -trimpath \
     -ldflags="-s -w -X main.version=${APP_VERSION} -X main.commit=${APP_COMMIT_SHA}" \

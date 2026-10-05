@@ -56,7 +56,7 @@ permissions:
 jobs:
   airgapper:
     name: ${{ inputs.job-name || 'airgapper' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container:
       image: ${{ inputs.image_registry }}/${{ inputs.image_name }}:${{ inputs.image_tag }}
       options: --pull=${{ inputs.image_pull_policy || 'always' }}
