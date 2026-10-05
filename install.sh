@@ -6,6 +6,7 @@ REPO_OWNER="FullStackS-GmbH"
 REPO_NAME="airgapper"
 BINARY_NAME="airgapper"
 API_BASE_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
+COSIGN_KEY_URL="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/cosign.pub"
 
 COLOR_RESET=""
 COLOR_INFO=""
@@ -286,6 +287,61 @@ verify_checksum() {
   log "Checksum verified: $actual"
 }
 
+extract_signature_url() {
+  printf '%s' "$1" | jq -r \
+    --arg name "$2.sigstore.json" \
+    'first(
+      .assets[]?
+      | select(.name == $name)
+      | .browser_download_url
+    ) // empty'
+}
+
+# Fetches the cosign public key into $1 and prints the resulting path.
+# AIRGAPPER_COSIGN_KEY may point at a local file or an alternative URL.
+resolve_cosign_key() {
+  key_source="${AIRGAPPER_COSIGN_KEY:-$COSIGN_KEY_URL}"
+
+  case "$key_source" in
+    http://*|https://*)
+      curl -fsSL "$key_source" -o "$1" \
+        || fatal "failed to download cosign public key from '$key_source'"
+      printf '%s' "$1"
+      ;;
+    *)
+      key_path=$(expand_path "$key_source")
+      [ -f "$key_path" ] || fatal "cosign public key '$key_path' does not exist"
+      printf '%s' "$key_path"
+      ;;
+  esac
+}
+
+verify_signature() {
+  archive="$1"
+  signature_url="$2"
+  bundle_file="$3"
+  key_file="$4"
+
+  curl -fsSL "$signature_url" -o "$bundle_file" \
+    || fatal "failed to download signature bundle from '$signature_url'"
+
+  key_file=$(resolve_cosign_key "$key_file")
+
+  # Verification contacts the Rekor transparency log by default, which hosts
+  # without internet access cannot reach.
+  if is_true "${AIRGAPPER_COSIGN_OFFLINE:-0}"; then
+    cosign_output=$(cosign verify-blob --key "$key_file" --bundle "$bundle_file" \
+      --insecure-ignore-tlog=true "$archive" 2>&1) \
+      || fatal "cosign verification failed: $cosign_output"
+  else
+    cosign_output=$(cosign verify-blob --key "$key_file" --bundle "$bundle_file" \
+      "$archive" 2>&1) \
+      || fatal "cosign verification failed: $cosign_output"
+  fi
+
+  log "Signature verified with cosign."
+}
+
 confirm_install() {
   if is_true "$ASSUME_YES_VALUE"; then
     log "Skipping approval prompt because AIRGAPPER_YES is enabled."
@@ -354,6 +410,20 @@ main() {
     [ -n "$checksums_url" ] || fatal "no checksums file in release '$release_tag'. Set AIRGAPPER_SKIP_CHECKSUM=1 to install without verification"
   fi
 
+  # Signature verification is best effort: it needs cosign on the host, and
+  # releases published before signing was introduced carry no bundle.
+  signature_url=""
+  if is_true "${AIRGAPPER_SKIP_SIGNATURE:-0}"; then
+    log "Signature verification disabled via AIRGAPPER_SKIP_SIGNATURE."
+  elif ! command -v cosign >/dev/null 2>&1; then
+    log "cosign not found, skipping signature verification."
+  else
+    signature_url=$(extract_signature_url "$release_json" "$asset_name")
+    if [ -z "$signature_url" ]; then
+      log "Release '$release_tag' ships no signature for '$asset_name', skipping signature verification."
+    fi
+  fi
+
   log "Calculated installation settings:"
   log "  Repository:   ${REPO_OWNER}/${REPO_NAME}"
   log "  Version tag:  $release_tag"
@@ -364,6 +434,10 @@ main() {
   log "  Archive URL:  $asset_url"
   if [ -n "$checksums_url" ]; then
     log "  Checksums:    $checksums_url"
+  fi
+  if [ -n "$signature_url" ]; then
+    log "  Signature:    $signature_url"
+    log "  Cosign key:   ${AIRGAPPER_COSIGN_KEY:-$COSIGN_KEY_URL}"
   fi
 
   confirm_install
@@ -393,6 +467,12 @@ main() {
   if [ -n "$checksums_url" ]; then
     log "Verifying checksum..."
     verify_checksum "$archive_path" "$checksums_url" "$asset_name" "$tmp_dir/checksums.txt"
+  fi
+
+  if [ -n "$signature_url" ]; then
+    log "Verifying signature with cosign..."
+    verify_signature "$archive_path" "$signature_url" \
+      "$tmp_dir/signature.sigstore.json" "$tmp_dir/cosign.pub"
   fi
 
   binary_file="$BINARY_NAME"

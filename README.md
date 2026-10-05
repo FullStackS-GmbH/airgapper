@@ -33,6 +33,7 @@ It is designed for environments where registries sit behind an air gap and artif
 ### Install
 
 The install script downloads the release archive for your platform, verifies its SHA-256 checksum against the published checksums file, and installs the binary.
+When [cosign](https://docs.sigstore.dev/cosign/) is on your `PATH`, it also verifies the archive's signature against [`cosign.pub`](cosign.pub) before installing.
 
 ```shell
 curl -fsSL https://raw.githubusercontent.com/fullstacks-gmbh/airgapper/main/install.sh | sh
@@ -54,7 +55,13 @@ Control the script with these environment variables.
 | `AIRGAPPER_YES`            | `0`         | Skip the confirmation prompt                                |
 | `AIRGAPPER_QUIET`          | `0`         | Suppress progress output                                    |
 | `AIRGAPPER_SKIP_CHECKSUM`  | `0`         | Install without checksum verification, not recommended      |
+| `AIRGAPPER_SKIP_SIGNATURE` | `0`         | Skip signature verification even when cosign is installed   |
+| `AIRGAPPER_COSIGN_KEY`     | repo key    | Local path or URL of the public key to verify against       |
+| `AIRGAPPER_COSIGN_OFFLINE` | `0`         | Verify without contacting the Rekor transparency log        |
 | `NO_COLOR`                 | unset       | Disable colored output                                      |
+
+Signature verification is best effort.
+The script skips it when cosign is missing or when the release carries no signature bundle, and it fails the install when cosign is present and verification does not pass.
 
 ```shell
 # Pin a version and install unattended into a custom directory
@@ -78,7 +85,7 @@ docker pull ghcr.io/fullstacks-gmbh/airgapper:latest
 ### Verify signatures
 
 Release archives, the checksums file, and the container image are signed with [cosign](https://docs.sigstore.dev/cosign/) using the key pair whose public half is [`cosign.pub`](cosign.pub) in this repository.
-Verification is a separate step: the install script checks checksums, not signatures.
+The install script performs this check automatically when cosign is available; the steps below cover manual verification of a downloaded artifact.
 
 Each signed artifact has a matching `.sigstore.json` bundle in the release assets.
 
