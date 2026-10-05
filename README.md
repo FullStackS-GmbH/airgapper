@@ -33,7 +33,37 @@ Universal Airgapper reads a YAML configuration file listing artifacts (container
 
 ### Install
 
-Download the latest binary from [GitHub Releases](https://github.com/fullstacks-gmbh/airgapper/releases), or build from source:
+The install script downloads the release archive for your platform, verifies its SHA-256 checksum against the published checksums file, and installs the binary.
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/fullstacks-gmbh/airgapper/main/install.sh | sh
+```
+
+The script asks for confirmation before it writes anything.
+It needs `curl`, `tar`, and `jq`, plus one of `sha256sum`, `shasum`, or `openssl` for the checksum verification.
+
+Without `AIRGAPPER_INSTALL_DIR`, it installs into the first of `~/.local/bin`, `~/bin`, or `/usr/local/bin` that exists and is on your `PATH`.
+
+Control the script with these environment variables.
+
+| Variable                  | Default    | Effect                                                              |
+|---------------------------|------------|---------------------------------------------------------------------|
+| `AIRGAPPER_VERSION`       | latest     | Install a specific release, with or without the `v` prefix          |
+| `AIRGAPPER_INSTALL_DIR`   | auto       | Target directory, created if missing                                |
+| `AIRGAPPER_OS`            | `uname -s` | Override the platform (`linux`, `darwin`, `windows`)                |
+| `AIRGAPPER_ARCH`          | `uname -m` | Override the architecture (`amd64`, `arm64`)                        |
+| `AIRGAPPER_YES`           | `0`        | Skip the confirmation prompt                                        |
+| `AIRGAPPER_QUIET`         | `0`        | Suppress progress output                                            |
+| `AIRGAPPER_SKIP_CHECKSUM` | `0`        | Install without checksum verification, not recommended              |
+| `NO_COLOR`                | unset      | Disable colored output                                              |
+
+```shell
+# Pin a version and install unattended into a custom directory
+curl -fsSL https://raw.githubusercontent.com/fullstacks-gmbh/airgapper/main/install.sh \
+  | AIRGAPPER_VERSION=1.4.3 AIRGAPPER_YES=1 AIRGAPPER_INSTALL_DIR=~/.local/bin sh
+```
+
+Alternatively, download an archive from [GitHub Releases](https://github.com/fullstacks-gmbh/airgapper/releases) or build from source:
 
 ```shell
 # Build from source (requires Go 1.26.3+)
@@ -45,6 +75,55 @@ Or use the container image:
 ```shell
 docker pull ghcr.io/fullstacks-gmbh/airgapper:latest
 ```
+
+### Verify signatures
+
+Release archives, the checksums file, and the container image are signed with [cosign](https://docs.sigstore.dev/cosign/) using the key pair whose public half is [`cosign.pub`](cosign.pub) in this repository.
+Verification is a separate step: the install script checks checksums, not signatures.
+
+Each signed artifact has a matching `.sigstore.json` bundle in the release assets.
+
+```shell
+VERSION=1.4.3
+BASE=https://github.com/fullstacks-gmbh/airgapper/releases/download/v${VERSION}
+ARCHIVE=airgapper_${VERSION}_linux_amd64.tar.gz
+
+# Public key, archive, and signature bundle
+curl -fsSLO https://raw.githubusercontent.com/fullstacks-gmbh/airgapper/main/cosign.pub
+curl -fsSLO "${BASE}/${ARCHIVE}"
+curl -fsSLO "${BASE}/${ARCHIVE}.sigstore.json"
+
+cosign verify-blob \
+  --key cosign.pub \
+  --bundle "${ARCHIVE}.sigstore.json" \
+  "${ARCHIVE}"
+```
+
+A successful run prints `Verified OK`.
+Any other output means the archive does not match the signature and must not be used.
+
+Verify the checksums file the same way, then check the archive hashes against it:
+
+```shell
+curl -fsSLO "${BASE}/airgapper_${VERSION}_checksums.txt"
+curl -fsSLO "${BASE}/airgapper_${VERSION}_checksums.txt.sigstore.json"
+
+cosign verify-blob \
+  --key cosign.pub \
+  --bundle "airgapper_${VERSION}_checksums.txt.sigstore.json" \
+  "airgapper_${VERSION}_checksums.txt"
+
+sha256sum --check --ignore-missing "airgapper_${VERSION}_checksums.txt"
+```
+
+Verify the container image by tag or by digest:
+
+```shell
+cosign verify --key cosign.pub ghcr.io/fullstacks-gmbh/airgapper:1.4.3
+```
+
+Signatures are also recorded in the public Rekor transparency log, which cosign contacts during verification.
+On hosts without internet access, add `--insecure-ignore-tlog=true` to verify against the public key alone.
 
 ### Configure
 

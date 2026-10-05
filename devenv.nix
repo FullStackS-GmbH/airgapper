@@ -19,6 +19,7 @@
   packages = [
     pkgs.golangci-lint
     pkgs.goreleaser
+    pkgs.cosign
   ];
 
   # https://devenv.sh/languages/
