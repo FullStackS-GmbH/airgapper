@@ -2,6 +2,7 @@ package sync
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
@@ -117,11 +118,24 @@ func FormatResult(resourceType domain.ResourceType, source, destination string, 
 		status,
 	)
 
-	if vr.Message != "" {
+	switch {
+	case vr.Message != "":
 		line += fmt.Sprintf(" (%s)", vr.Message)
+	case vr.Error != nil:
+		line += fmt.Sprintf(" (%s)", vr.Error)
 	}
 
-	return line
+	return redactURLCredentials(line)
+}
+
+// urlCredentials matches the userinfo part of any scheme://user:pass@ URL.
+var urlCredentials = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s"']+@`)
+
+// redactURLCredentials masks credentials embedded in URLs (e.g. a git
+// https://user:token@host/repo source, or the same URL echoed in an error)
+// so they never reach the summary or dry-run log.
+func redactURLCredentials(s string) string {
+	return urlCredentials.ReplaceAllString(s, "${1}***@")
 }
 
 // FormatSummary returns a human-readable multi-line summary of the sync run.

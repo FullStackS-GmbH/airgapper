@@ -1,6 +1,7 @@
 package sync_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -157,6 +158,7 @@ func TestFormatResult(t *testing.T) {
 		destination  string
 		vr           domain.VersionResult
 		wantContains []string
+		wantMissing  []string
 	}{
 		{
 			name:         "synced with no message",
@@ -182,6 +184,24 @@ func TestFormatResult(t *testing.T) {
 			vr:           domain.VersionResult{Version: "main", Status: domain.SyncStatusFailed, Message: "auth error"},
 			wantContains: []string{"[git]", "FAILED", "(auth error)"},
 		},
+		{
+			name:         "failed with error but no message",
+			resourceType: domain.ResourceTypeImage,
+			source:       "docker.io/library/ubuntu",
+			destination:  "internal.io/library/ubuntu",
+			vr:           domain.VersionResult{Version: "v1.0.0", Status: domain.SyncStatusFailed, Error: errors.New("load signature policy")},
+			wantContains: []string{"FAILED", "(load signature policy)"},
+		},
+		{
+			name:         "credentials in URLs are redacted",
+			resourceType: domain.ResourceTypeGit,
+			source:       "https://user:s3cret@github.com/org/repo",
+			destination:  "https://oauth2:glpat-abc@gitlab.example.com/org/repo",
+			vr: domain.VersionResult{Version: "main", Status: domain.SyncStatusFailed,
+				Error: errors.New(`clone source: Get "https://user:s3cret@github.com/org/repo/info/refs": EOF`)},
+			wantContains: []string{"https://***@github.com/org/repo:main", "https://***@gitlab.example.com/org/repo:main", `"https://***@github.com/org/repo/info/refs"`},
+			wantMissing:  []string{"s3cret", "glpat-abc"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -190,6 +210,9 @@ func TestFormatResult(t *testing.T) {
 			got := syncpkg.FormatResult(tt.resourceType, tt.source, tt.destination, tt.vr)
 			for _, want := range tt.wantContains {
 				assert.Contains(t, got, want)
+			}
+			for _, secret := range tt.wantMissing {
+				assert.NotContains(t, got, secret)
 			}
 		})
 	}

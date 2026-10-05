@@ -57,14 +57,14 @@ func WriteDryRunLog(path string, results []domain.SyncResult, summary Summary) (
 
 	for _, result := range results {
 		for _, op := range result.Operations {
-			fmt.Fprintf(&b, "  [%s] %-9s %s", op.ResourceType, op.Operation, op.Version)
+			line := fmt.Sprintf("  [%s] %-9s %s", op.ResourceType, op.Operation, op.Version)
 			if op.Source != "" {
-				fmt.Fprintf(&b, "  %s -> %s", op.Source, op.Destination)
+				line += fmt.Sprintf("  %s -> %s", op.Source, op.Destination)
 			}
 			if op.Message != "" {
-				fmt.Fprintf(&b, "  (%s)", op.Message)
+				line += fmt.Sprintf("  (%s)", op.Message)
 			}
-			b.WriteString("\n")
+			b.WriteString(redactURLCredentials(line) + "\n")
 		}
 	}
 	b.WriteString("\n")
