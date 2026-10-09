@@ -2,6 +2,7 @@ package helm
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -33,6 +34,20 @@ var legacyHTTPClient = &http.Client{
 		ResponseHeaderTimeout: 60 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		IdleConnTimeout:       90 * time.Second,
+	},
+}
+
+// insecureLegacyHTTPClient mirrors legacyHTTPClient but skips TLS certificate
+// verification, for endpoints explicitly marked insecure.
+var insecureLegacyHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 60 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // explicit opt-in via endpoint.Insecure
 	},
 }
 
@@ -99,7 +114,7 @@ func (t *Transporter) pullLegacyChart(ctx context.Context, endpoint domain.Endpo
 		return nil, "", fmt.Errorf("chart %q version %q: %w", endpoint.Repository, version, domain.ErrNotFound)
 	}
 
-	data, err := httpGet(ctx, chartURL, creds, maxChartArchiveSize)
+	data, err := httpGet(ctx, chartURL, creds, maxChartArchiveSize, endpoint.Insecure, endpoint.CACertPath)
 	if err != nil {
 		return nil, "", fmt.Errorf("download chart %q: %w", chartURL, err)
 	}
@@ -108,7 +123,7 @@ func (t *Transporter) pullLegacyChart(ctx context.Context, endpoint domain.Endpo
 }
 
 func (t *Transporter) legacyChartVersions(ctx context.Context, endpoint domain.Endpoint, creds *domain.Credential) ([]legacyChartVersion, error) {
-	idx, err := fetchLegacyIndex(ctx, endpoint.Registry, creds)
+	idx, err := fetchLegacyIndex(ctx, endpoint.Registry, creds, endpoint.Insecure, endpoint.CACertPath)
 	if err != nil {
 		return nil, err
 	}
@@ -120,9 +135,9 @@ func (t *Transporter) legacyChartVersions(ctx context.Context, endpoint domain.E
 	return entries, nil
 }
 
-func fetchLegacyIndex(ctx context.Context, registry string, creds *domain.Credential) (*legacyIndex, error) {
+func fetchLegacyIndex(ctx context.Context, registry string, creds *domain.Credential, insecure bool, certPath string) (*legacyIndex, error) {
 	indexURL := legacyRepoBaseURL(registry) + "/index.yaml"
-	data, err := httpGet(ctx, indexURL, creds, maxLegacyIndexSize)
+	data, err := httpGet(ctx, indexURL, creds, maxLegacyIndexSize, insecure, certPath)
 	if err != nil {
 		return nil, fmt.Errorf("fetch index %q: %w", indexURL, err)
 	}
@@ -162,7 +177,35 @@ func resolveLegacyChartURL(base, chartURL string) (string, error) {
 	return parsedBase.ResolveReference(parsedChartURL).String(), nil
 }
 
-func httpGet(ctx context.Context, rawURL string, creds *domain.Credential, limit int64) ([]byte, error) {
+// legacyClientFor selects the HTTP client to use for a legacy chart repo
+// request. Insecure takes precedence over certPath; when neither is set, the
+// shared timeout-bounded default client is reused.
+func legacyClientFor(insecure bool, certPath string) (*http.Client, error) {
+	switch {
+	case insecure:
+		return insecureLegacyHTTPClient, nil
+	case certPath != "":
+		pool, err := caCertPool(certPath)
+		if err != nil {
+			return nil, err
+		}
+		return &http.Client{
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ResponseHeaderTimeout: 60 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+				IdleConnTimeout:       90 * time.Second,
+				TLSClientConfig:       &tls.Config{RootCAs: pool},
+			},
+		}, nil
+	default:
+		return legacyHTTPClient, nil
+	}
+}
+
+func httpGet(ctx context.Context, rawURL string, creds *domain.Credential, limit int64, insecure bool, certPath string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -171,7 +214,11 @@ func httpGet(ctx context.Context, rawURL string, creds *domain.Credential, limit
 		req.SetBasicAuth(creds.Username, creds.Password)
 	}
 
-	resp, err := legacyHTTPClient.Do(req)
+	client, err := legacyClientFor(insecure, certPath)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
