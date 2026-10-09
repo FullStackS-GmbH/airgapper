@@ -6,14 +6,14 @@ import (
 	"go.podman.io/image/v5/signature"
 )
 
-// permissivePolicyJSON mirrors the prior go-containerregistry behavior:
-// accept any image without signature verification. Sigstore/cosign wiring is
-// a follow-up.
+// permissivePolicyJSON preserves the default of accepting images without
+// signature verification when no policy file is configured.
 const permissivePolicyJSON = `{"default":[{"type":"insecureAcceptAnything"}]}`
 
-var permissivePolicy, permissivePolicyErr = newPermissivePolicy()
-
-func newPermissivePolicy() (*signature.PolicyContext, error) {
+// PermissivePolicyContext creates an independent context accepting any image.
+// Each copy must own its context: policy evaluation mutates it and cannot run
+// concurrently on the same context. The caller must call Destroy when done.
+func PermissivePolicyContext() (*signature.PolicyContext, error) {
 	policy, err := signature.NewPolicyFromBytes([]byte(permissivePolicyJSON))
 	if err != nil {
 		return nil, fmt.Errorf("parse permissive policy: %w", err)
@@ -21,17 +21,11 @@ func newPermissivePolicy() (*signature.PolicyContext, error) {
 	return signature.NewPolicyContext(policy)
 }
 
-// PermissivePolicyContext returns a process-wide PolicyContext that accepts
-// any image. Safe for concurrent use.
-func PermissivePolicyContext() (*signature.PolicyContext, error) {
-	return permissivePolicy, permissivePolicyErr
-}
-
 // PolicyContext returns a PolicyContext built from the signature verification
 // policy at policyPath (a containers/image policy.json — see
 // signature.Policy). An empty policyPath falls back to
 // PermissivePolicyContext, preserving today's default of accepting any image
-// unverified.
+// unverified. The caller owns the context and must call Destroy when done.
 func PolicyContext(policyPath string) (*signature.PolicyContext, error) {
 	if policyPath == "" {
 		return PermissivePolicyContext()

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/redact"
 )
 
 // WriteDryRunLog writes a human-readable dry-run report to the specified path.
@@ -57,14 +58,14 @@ func WriteDryRunLog(path string, results []domain.SyncResult, summary Summary) (
 
 	for _, result := range results {
 		for _, op := range result.Operations {
-			line := fmt.Sprintf("  [%s] %-9s %s", op.ResourceType, op.Operation, op.Version)
+			fmt.Fprintf(&b, "  [%s] %-9s %s", op.ResourceType, op.Operation, op.Version)
 			if op.Source != "" {
-				line += fmt.Sprintf("  %s -> %s", op.Source, op.Destination)
+				fmt.Fprintf(&b, "  %s -> %s", op.Source, op.Destination)
 			}
 			if op.Message != "" {
-				line += fmt.Sprintf("  (%s)", op.Message)
+				fmt.Fprintf(&b, "  (%s)", op.Message)
 			}
-			b.WriteString(redactURLCredentials(line) + "\n")
+			b.WriteString("\n")
 		}
 	}
 	b.WriteString("\n")
@@ -72,7 +73,7 @@ func WriteDryRunLog(path string, results []domain.SyncResult, summary Summary) (
 	// Summary.
 	b.WriteString(FormatSummary(summary))
 
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(redact.URLCredentials(b.String())), 0o644); err != nil {
 		return "", fmt.Errorf("write dry-run log: %w", err)
 	}
 
