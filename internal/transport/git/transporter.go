@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -88,7 +89,9 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 	// Check if the ref exists at the destination (for skip mode).
 	exists, err := t.Exists(ctx, resource.Destination, ref, dstCred)
 	if err != nil {
-		logger.Warn("failed to check existence at destination", "error", err)
+		checkErr := fmt.Errorf("check destination: %w", err)
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: checkErr, Message: checkErr.Error()},
+			[]domain.OperationRecord{op(domain.OpFail, checkErr.Error())}
 	}
 
 	// Dry-run mode: report what would happen without mutating.
@@ -179,7 +182,7 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 
 // Exists checks whether a specific ref exists at the given endpoint by listing
 // remote refs without cloning. It returns true if the ref is found.
-func (t *Transporter) Exists(_ context.Context, endpoint domain.Endpoint, version string, creds *domain.Credential) (bool, error) {
+func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, version string, creds *domain.Credential) (bool, error) {
 	auth, err := credToTransportAuth(creds)
 	if err != nil {
 		return false, fmt.Errorf("build auth: %w", err)
@@ -190,7 +193,10 @@ func (t *Transporter) Exists(_ context.Context, endpoint domain.Endpoint, versio
 		URLs: []string{endpoint.Repository},
 	})
 
-	refs, err := rem.List(&gogit.ListOptions{Auth: auth})
+	refs, err := rem.ListContext(ctx, &gogit.ListOptions{Auth: auth})
+	if errors.Is(err, transport.ErrEmptyRemoteRepository) {
+		return false, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("list remote refs: %w", err)
 	}

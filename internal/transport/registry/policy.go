@@ -11,18 +11,13 @@ import (
 // a follow-up.
 const permissivePolicyJSON = `{"default":[{"type":"insecureAcceptAnything"}]}`
 
-var permissivePolicy, permissivePolicyErr = newPermissivePolicy()
-
-func newPermissivePolicy() (*signature.PolicyContext, error) {
+// PermissivePolicyContext creates an independent context accepting any image.
+// Each copy must own its context: policy evaluation mutates it and cannot run
+// concurrently on the same context. The caller must call Destroy when done.
+func PermissivePolicyContext() (*signature.PolicyContext, error) {
 	policy, err := signature.NewPolicyFromBytes([]byte(permissivePolicyJSON))
 	if err != nil {
 		return nil, fmt.Errorf("parse permissive policy: %w", err)
 	}
 	return signature.NewPolicyContext(policy)
-}
-
-// PermissivePolicyContext returns a process-wide PolicyContext that accepts
-// any image. Safe for concurrent use.
-func PermissivePolicyContext() (*signature.PolicyContext, error) {
-	return permissivePolicy, permissivePolicyErr
 }

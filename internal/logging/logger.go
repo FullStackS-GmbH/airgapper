@@ -6,6 +6,8 @@ package logging
 import (
 	"log/slog"
 	"os"
+
+	"github.com/fullstacks-gmbh/airgapper/internal/redact"
 )
 
 // NewLogger creates a structured logger that writes to stderr. The format
@@ -17,7 +19,7 @@ func NewLogger(debug bool, format string) *slog.Logger {
 		level = slog.LevelDebug
 	}
 
-	opts := &slog.HandlerOptions{Level: level}
+	opts := &slog.HandlerOptions{Level: level, ReplaceAttr: redactAttr}
 
 	var handler slog.Handler
 	switch format {
@@ -28,4 +30,16 @@ func NewLogger(debug bool, format string) *slog.Logger {
 	}
 
 	return slog.New(handler)
+}
+
+func redactAttr(_ []string, attr slog.Attr) slog.Attr {
+	switch attr.Value.Kind() {
+	case slog.KindString:
+		attr.Value = slog.StringValue(redact.URLCredentials(attr.Value.String()))
+	case slog.KindAny:
+		if err, ok := attr.Value.Any().(error); ok {
+			attr.Value = slog.StringValue(redact.URLCredentials(err.Error()))
+		}
+	}
+	return attr
 }
