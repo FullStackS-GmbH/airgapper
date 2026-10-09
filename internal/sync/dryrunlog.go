@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/redact"
 )
 
 // WriteDryRunLog writes a human-readable dry-run report to the specified path.
@@ -72,7 +73,7 @@ func WriteDryRunLog(path string, results []domain.SyncResult, summary Summary) (
 	// Summary.
 	b.WriteString(FormatSummary(summary))
 
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(redact.URLCredentials(b.String())), 0o644); err != nil {
 		return "", fmt.Errorf("write dry-run log: %w", err)
 	}
 

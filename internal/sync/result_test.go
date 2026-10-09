@@ -1,13 +1,37 @@
 package sync_test
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 	syncpkg "github.com/fullstacks-gmbh/airgapper/internal/sync"
 )
+
+func TestReportsMaskURLCredentialsAndIncludeErrors(t *testing.T) {
+	t.Parallel()
+	url := "https://user:s3cret@host/repo"
+	vr := domain.VersionResult{Version: "main", Status: domain.SyncStatusFailed, Error: errors.New("fetch " + url)}
+	line := syncpkg.FormatResult(domain.ResourceTypeGit, url, url, vr)
+	assert.NotContains(t, line, "s3cret")
+	assert.Contains(t, line, "fetch https://***@host/repo")
+	result := domain.SyncResult{
+		Resource:   domain.Resource{Type: domain.ResourceTypeGit, Source: domain.Endpoint{Repository: url}, Destination: domain.Endpoint{Repository: url}},
+		Failed:     []domain.VersionResult{vr},
+		Operations: []domain.OperationRecord{{Operation: domain.OpFail, Source: url, Destination: url, Message: "fetch " + url}},
+	}
+	path, err := syncpkg.WriteDryRunLog(filepath.Join(t.TempDir(), "report.log"), []domain.SyncResult{result}, syncpkg.Summarize([]domain.SyncResult{result}))
+	require.NoError(t, err)
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "s3cret")
+	assert.Contains(t, string(data), "fetch https://***@host/repo")
+}
 
 func TestSummarize(t *testing.T) {
 	t.Parallel()

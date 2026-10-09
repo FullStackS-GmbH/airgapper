@@ -2,12 +2,14 @@ package image
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 
 	"go.podman.io/image/v5/copy"
 	"go.podman.io/image/v5/docker"
+	"go.podman.io/image/v5/types"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport"
@@ -103,14 +105,8 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 			[]domain.OperationRecord{op(domain.OpFail, err.Error())}
 	}
 
-	policyCtx, err := registry.PermissivePolicyContext()
-	if err != nil {
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: err},
-			[]domain.OperationRecord{op(domain.OpFail, err.Error())}
-	}
-
 	logger.Info("copying image")
-	_, err = copy.Image(ctx, policyCtx, dstRef, srcRef, &copy.Options{
+	err = copyImage(ctx, dstRef, srcRef, &copy.Options{
 		SourceCtx:          registry.SystemContext(srcCred, false),
 		DestinationCtx:     registry.SystemContext(dstCred, false),
 		ImageListSelection: copy.CopyAllImages,
@@ -118,7 +114,7 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 	})
 	if err != nil {
 		logger.Error("failed to copy image", "error", err)
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("copy image: %w", err)},
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: err},
 			[]domain.OperationRecord{op(domain.OpPull, "pull from source"), op(domain.OpFail, "copy failed: "+err.Error())}
 	}
 
@@ -132,6 +128,24 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 		ops = append(ops, op(domain.OpPush, "pushed to destination"))
 	}
 	return domain.VersionResult{Version: version, Status: domain.SyncStatusSynced, Message: "copied"}, ops
+}
+
+// copyImage owns the policy context for exactly one copy, including cleanup on
+// failure. Cleanup errors are joined so neither failure is discarded.
+func copyImage(ctx context.Context, dst, src types.ImageReference, opts *copy.Options) (err error) {
+	policyCtx, err := registry.PermissivePolicyContext()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if destroyErr := policyCtx.Destroy(); destroyErr != nil {
+			err = errors.Join(err, fmt.Errorf("destroy image policy context: %w", destroyErr))
+		}
+	}()
+	if _, err = copy.Image(ctx, policyCtx, dst, src, opts); err != nil {
+		return fmt.Errorf("copy image: %w", err)
+	}
+	return nil
 }
 
 // Exists checks whether a specific image tag exists at the given endpoint. An

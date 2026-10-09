@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/redact"
 )
 
 // OperationCounts aggregates counts by operation type.
@@ -117,11 +118,15 @@ func FormatResult(resourceType domain.ResourceType, source, destination string, 
 		status,
 	)
 
-	if vr.Message != "" {
-		line += fmt.Sprintf(" (%s)", vr.Message)
+	message := vr.Message
+	if message == "" && vr.Error != nil {
+		message = vr.Error.Error()
+	}
+	if message != "" {
+		line += fmt.Sprintf(" (%s)", message)
 	}
 
-	return line
+	return redact.URLCredentials(line)
 }
 
 // FormatSummary returns a human-readable multi-line summary of the sync run.
