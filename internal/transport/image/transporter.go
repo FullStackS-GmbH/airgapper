@@ -106,9 +106,9 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 	}
 
 	logger.Info("copying image")
-	err = copyImage(ctx, dstRef, srcRef, &copy.Options{
-		SourceCtx:          registry.SystemContext(srcCred, false),
-		DestinationCtx:     registry.SystemContext(dstCred, false),
+	err = copyImage(ctx, dstRef, srcRef, resource.PolicyPath, &copy.Options{
+		SourceCtx:          registry.SystemContext(srcCred, resource.Source.Insecure, resource.Source.CACertPath),
+		DestinationCtx:     registry.SystemContext(dstCred, resource.Destination.Insecure, resource.Destination.CACertPath),
 		ImageListSelection: copy.CopyAllImages,
 		ReportWriter:       io.Discard,
 	})
@@ -132,8 +132,8 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 
 // copyImage owns the policy context for exactly one copy, including cleanup on
 // failure. Cleanup errors are joined so neither failure is discarded.
-func copyImage(ctx context.Context, dst, src types.ImageReference, opts *copy.Options) (err error) {
-	policyCtx, err := registry.PermissivePolicyContext()
+func copyImage(ctx context.Context, dst, src types.ImageReference, policyPath string, opts *copy.Options) (err error) {
+	policyCtx, err := registry.PolicyContext(policyPath)
 	if err != nil {
 		return err
 	}
@@ -158,7 +158,7 @@ func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, vers
 		return false, fmt.Errorf("parse reference %q: %w", refStr, err)
 	}
 
-	return registry.ManifestExists(ctx, registry.SystemContext(creds, false), ref, t.logger)
+	return registry.ManifestExists(ctx, registry.SystemContext(creds, endpoint.Insecure, endpoint.CACertPath), ref, t.logger)
 }
 
 // ListVersions returns all tags available at the given endpoint.
@@ -169,7 +169,7 @@ func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint
 		return nil, fmt.Errorf("parse repo %q: %w", repo, err)
 	}
 
-	sys := registry.SystemContext(creds, false)
+	sys := registry.SystemContext(creds, endpoint.Insecure, endpoint.CACertPath)
 	tags, err := docker.GetRepositoryTags(ctx, sys, ref)
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %q: %w", repo, err)

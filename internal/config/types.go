@@ -97,6 +97,12 @@ type ResourceConfig struct {
 	// version. Must match a ScannerConfig.Name if set.
 	ScannerRef string `yaml:"scanner_ref,omitempty"`
 
+	// PolicyPath is the optional path to a containers/image signature
+	// verification policy (policy.json) to check the source image against
+	// before pushing. Image resources only. Empty means accept any image
+	// unverified (the pre-existing default).
+	PolicyPath string `yaml:"policy_path,omitempty"`
+
 	// SourceCredentialsRef is the optional name of a credential entry for
 	// authenticating against the source.
 	SourceCredentialsRef string `yaml:"source_credentials_ref,omitempty"`
@@ -104,6 +110,26 @@ type ResourceConfig struct {
 	// TargetCredentialsRef is the optional name of a credential entry for
 	// authenticating against the destination.
 	TargetCredentialsRef string `yaml:"target_credentials_ref,omitempty"`
+
+	// SourceInsecure skips TLS certificate verification against the source
+	// endpoint (and, for Helm, forces plain HTTP). Off by default. Prefer
+	// SourceCACert when possible.
+	SourceInsecure bool `yaml:"source_insecure,omitempty"`
+
+	// DestinationInsecure skips TLS certificate verification against the
+	// destination endpoint (and, for Helm, forces plain HTTP). Off by
+	// default. Prefer DestinationCACert when possible.
+	DestinationInsecure bool `yaml:"destination_insecure,omitempty"`
+
+	// SourceCACert is a directory containing a "ca.crt" file trusted for the
+	// source endpoint, in addition to the system pool (Docker cert-path
+	// convention). Lets a private CA be trusted without disabling
+	// verification.
+	SourceCACert string `yaml:"source_ca_cert,omitempty"`
+
+	// DestinationCACert is a directory containing a "ca.crt" file trusted
+	// for the destination endpoint, in addition to the system pool.
+	DestinationCACert string `yaml:"destination_ca_cert,omitempty"`
 }
 
 // ToResource converts the raw ResourceConfig into a domain.Resource. It maps
@@ -136,6 +162,8 @@ func (rc *ResourceConfig) ToResource() domain.Resource {
 		r.Source = parseImageEndpoint(rc.Source)
 		r.Destination = parseImageEndpoint(rc.Destination)
 		r.Versions = rc.Tags
+		r.PolicyPath = strings.TrimSpace(rc.PolicyPath)
+		rc.applyTLSOptions(&r.Source, &r.Destination)
 
 	case "helm":
 		r.Type = domain.ResourceTypeHelm
@@ -149,6 +177,7 @@ func (rc *ResourceConfig) ToResource() domain.Resource {
 			Repository: strings.Trim(strings.TrimSpace(rc.DestinationRepo), "/"),
 		}
 		r.Versions = rc.Versions
+		rc.applyTLSOptions(&r.Source, &r.Destination)
 
 	case "git":
 		r.Type = domain.ResourceTypeGit
@@ -162,6 +191,17 @@ func (rc *ResourceConfig) ToResource() domain.Resource {
 	}
 
 	return r
+}
+
+// applyTLSOptions copies the insecure/CA-cert TLS overrides onto the source
+// and destination endpoints. Only image and Helm resources go over a
+// registry.SystemContext-backed transport that honors these; git resources
+// ignore them, so callers only invoke this for image and helm.
+func (rc *ResourceConfig) applyTLSOptions(source, destination *domain.Endpoint) {
+	source.Insecure = rc.SourceInsecure
+	destination.Insecure = rc.DestinationInsecure
+	source.CACertPath = strings.TrimSpace(rc.SourceCACert)
+	destination.CACertPath = strings.TrimSpace(rc.DestinationCACert)
 }
 
 // parseImageEndpoint splits an image reference like

@@ -30,6 +30,12 @@ type Resource struct {
 	// ScannerRef is the optional name of a scanner to run before syncing.
 	ScannerRef string
 
+	// PolicyPath is the optional filesystem path to a containers/image
+	// signature verification policy (policy.json). Empty means accept any
+	// image unverified, preserving the pre-existing default. Image resources
+	// only; ignored for other resource types.
+	PolicyPath string
+
 	// SourceCredentialsRef is the optional name of the credential entry used
 	// to authenticate against the source.
 	SourceCredentialsRef string
@@ -48,6 +54,20 @@ type Endpoint struct {
 	// Repository is the path within the registry (e.g. "library/ubuntu") or,
 	// for git resources, the full clone URL (HTTPS or SSH).
 	Repository string
+
+	// Insecure skips TLS certificate verification (and, for Helm, forces
+	// plain HTTP) when talking to this endpoint. Used for private registries
+	// behind a self-signed or untrusted CA. Defaults to false. Prefer CACert
+	// when possible: it keeps verification on instead of switching it off.
+	Insecure bool
+
+	// CACertPath is the filesystem path to a directory containing a "ca.crt"
+	// file trusted for this endpoint, in addition to the system pool
+	// (following the Docker host-cert-directory convention used by
+	// types.SystemContext.DockerCertPath). Used for private registries
+	// behind a self-signed or internal CA without disabling verification.
+	// Empty means use the system trust store only.
+	CACertPath string
 }
 
 // String returns a human-readable representation of the endpoint.

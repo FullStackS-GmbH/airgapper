@@ -29,7 +29,7 @@ func TestCopyImageConcurrentMultiPlatform(t *testing.T) {
 		require.NoError(t, err)
 		group.Go(func() error {
 			ctx := context.Background()
-			if err := copyImage(ctx, destination, source, &copy.Options{ImageListSelection: copy.CopyAllImages, ReportWriter: io.Discard}); err != nil {
+			if err := copyImage(ctx, destination, source, "", &copy.Options{ImageListSelection: copy.CopyAllImages, ReportWriter: io.Discard}); err != nil {
 				return err
 			}
 			copied, err := destination.NewImageSource(ctx, nil)
@@ -57,6 +57,40 @@ func TestCopyImageConcurrentMultiPlatform(t *testing.T) {
 		})
 	}
 	require.NoError(t, group.Wait())
+}
+
+func TestCopyImageUsesConfiguredPolicy(t *testing.T) {
+	t.Parallel()
+	source, err := ocilayout.ParseReference(multiPlatformLayout(t) + ":test")
+	require.NoError(t, err)
+	for _, tt := range []struct {
+		name    string
+		policy  string
+		wantErr string
+	}{
+		{name: "permissive", policy: `{"default":[{"type":"insecureAcceptAnything"}]}`},
+		{name: "reject", policy: `{"default":[{"type":"reject"}]}`, wantErr: "rejected by policy"},
+		{name: "missing", wantErr: "load signature policy"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			policyPath := filepath.Join(t.TempDir(), "policy.json")
+			if tt.policy != "" {
+				require.NoError(t, os.WriteFile(policyPath, []byte(tt.policy), 0o600))
+			}
+			destination, err := ocilayout.ParseReference(t.TempDir() + ":test")
+			require.NoError(t, err)
+			err = copyImage(context.Background(), destination, source, policyPath, &copy.Options{
+				ImageListSelection: copy.CopyAllImages,
+				ReportWriter:       io.Discard,
+			})
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 // multiPlatformLayout creates a small OCI fixture without external registries.
