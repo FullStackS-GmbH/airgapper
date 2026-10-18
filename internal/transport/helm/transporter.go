@@ -11,10 +11,12 @@ import (
 	"go.podman.io/image/v5/docker"
 	"go.podman.io/image/v5/types"
 	"helm.sh/helm/v4/pkg/registry"
+	orasretry "oras.land/oras-go/v2/registry/remote/retry"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport"
 	transportregistry "github.com/fullstacks-gmbh/airgapper/internal/transport/registry"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/retry"
 )
 
 // Transporter handles synchronization of Helm charts between registries. It
@@ -22,6 +24,15 @@ import (
 // legacy HTTP chart repositories.
 type Transporter struct {
 	logger *slog.Logger
+	retry  retry.Policy
+}
+
+// WithRetry sets the retry policy for registry and repository calls and
+// returns t. OCI pulls and pushes are retried by the Helm client's own
+// transport, so the policy covers lookups and legacy HTTP repositories.
+func (t *Transporter) WithRetry(p retry.Policy) *Transporter {
+	t.retry = p
+	return t
 }
 
 // New creates a new Helm chart Transporter with the given logger.
@@ -266,7 +277,12 @@ func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, vers
 		return false, fmt.Errorf("parse reference %q: %w", refStr, err)
 	}
 
-	return transportregistry.ManifestExists(ctx, registrySystemContext(creds, endpoint), ref, t.logger)
+	var exists bool
+	err = t.retry.Do(ctx, t.logger, "check manifest", func() (err error) {
+		exists, err = transportregistry.ManifestExists(ctx, registrySystemContext(creds, endpoint), ref, t.logger)
+		return err
+	})
+	return exists, err
 }
 
 // ListVersions returns all available versions for a chart at the given
@@ -284,7 +300,11 @@ func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint
 	}
 
 	sys := registrySystemContext(creds, endpoint)
-	tags, err := docker.GetRepositoryTags(ctx, sys, ref)
+	var tags []string
+	err = t.retry.Do(ctx, t.logger, "list tags", func() (err error) {
+		tags, err = docker.GetRepositoryTags(ctx, sys, ref)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %q: %w", repo, err)
 	}
@@ -313,7 +333,7 @@ func newRegistryClient(ctx context.Context, source, destination domain.Endpoint)
 	case (IsOCIRegistry(source.Registry) && needsPlainHTTP(source.Registry)) || needsPlainHTTP(destination.Registry):
 		opts = append(opts, registry.ClientOptPlainHTTP())
 	case source.Insecure || destination.Insecure:
-		base = insecureHTTPClient.Transport
+		base = orasretry.NewTransport(insecureHTTPClient.Transport)
 	case source.CACertPath != "" || destination.CACertPath != "":
 		certDir := source.CACertPath
 		if certDir == "" {
@@ -323,7 +343,7 @@ func newRegistryClient(ctx context.Context, source, destination domain.Endpoint)
 		if err != nil {
 			return nil, fmt.Errorf("configure registry client CA cert: %w", err)
 		}
-		base = client.Transport
+		base = orasretry.NewTransport(client.Transport)
 	}
 
 	opts = append(opts, registry.ClientOptHTTPClient(&http.Client{Transport: ctxTransport{base: base, ctx: ctx}}))

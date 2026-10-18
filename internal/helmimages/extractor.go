@@ -19,6 +19,7 @@ import (
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 	helmtransport "github.com/fullstacks-gmbh/airgapper/internal/transport/helm"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/retry"
 )
 
 // ImageEntry represents a unique container image source with all tags
@@ -56,6 +57,12 @@ func New(logger *slog.Logger) *Extractor {
 		transporter: helmtransport.New(logger),
 		logger:      logger,
 	}
+}
+
+// WithRetry sets the retry policy for chart downloads and returns e.
+func (e *Extractor) WithRetry(p retry.Policy) *Extractor {
+	e.transporter.WithRetry(p)
+	return e
 }
 
 // Extract processes all Helm resources, renders each chart version with default

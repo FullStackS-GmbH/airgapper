@@ -77,7 +77,15 @@ func runSync(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Create the sync engine with a transporter per supported resource type.
-	transporters := []domain.Transporter{image.New(logger), helm.New(logger), git.New(logger)}
+	policy, err := retryPolicy(cmd)
+	if err != nil {
+		return err
+	}
+	transporters := []domain.Transporter{
+		image.New(logger).WithRetry(policy),
+		helm.New(logger).WithRetry(policy),
+		git.New(logger).WithRetry(policy),
+	}
 	engine := sync.NewEngine(transporters, scanner.NewFromConfig(cfg.Scanners), logger)
 
 	// Convert config resources to domain resources.
