@@ -9,6 +9,8 @@ Configuration files must match one of these patterns:
 - `*.config.airgapper.yaml`
 - `*.config.airgapper.yml`
 
+Keys are checked strictly: an unknown or misspelled key (for example `policy_pth`) is an error, not silently ignored. The same applies to credential files.
+
 When `--config` points to a **folder**, all matching files in that folder are discovered and merged.
 When it points to a **single file**, only that file is loaded.
 
@@ -179,7 +181,7 @@ Sync Git repositories between hosting services via HTTPS or SSH.
 | `type`                    | yes       | `git`                                                                 |
 | `source_repo`             | yes       | Source repository URL (HTTPS or SSH)                                  |
 | `destination_repo`        | yes       | Destination repository URL (HTTPS or SSH)                             |
-| `refs`                    | yes       | List of refs to sync: branches, tags, SHAs (supports regex patterns)  |
+| `refs`                    | yes       | Branches and tags to sync, by short or full name (supports regex patterns, matched against short names) |
 | `push_mode`               | no        | `skip` (default), `push`, or `force`                                  |
 | `source_credentials_ref`  | no        | Name of a credential entry for the source                             |
 | `target_credentials_ref`  | no        | Name of a credential entry for the destination                        |
@@ -263,7 +265,7 @@ When a pattern is detected:
 
 1. The tool calls `ListVersions()` to get all available versions from the source.
 2. The pattern is compiled as a Go `regexp`.
-3. Only full matches are returned (the pattern is anchored with `^` and `$`).
+3. Only full matches are returned (the pattern is wrapped as `^(?:pattern)$`, so `a|b` matches `a` or `b` as a whole).
 4. Matched versions are added to the sync list.
 
 ### Examples

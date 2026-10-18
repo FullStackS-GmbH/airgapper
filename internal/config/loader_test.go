@@ -139,3 +139,38 @@ func TestLoadCredentials_MissingFile(t *testing.T) {
 	_, err := config.LoadCredentials("/nonexistent/credentials.yaml")
 	require.Error(t, err)
 }
+
+func TestLoad_RejectsUnknownKeys(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "typo.config.airgapper.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("resources:\n  - type: image\n    policy_pth: deny.json\n"), 0o600))
+
+	_, err := config.Load(path)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "policy_pth")
+}
+
+func TestLoad_EmptyFileIsValid(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "empty.config.airgapper.yaml")
+	require.NoError(t, os.WriteFile(path, nil, 0o600))
+
+	cfg, err := config.Load(path)
+
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Resources)
+}
+
+func TestLoadCredentials_RejectsUnknownKeys(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "typo.creds.airgapper.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("image:\n  - name: a\n    pasword: x\n"), 0o600))
+
+	_, err := config.LoadCredentials(path)
+
+	require.Error(t, err)
+}

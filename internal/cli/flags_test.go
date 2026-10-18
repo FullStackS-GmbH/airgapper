@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"errors"
+	"io"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -134,4 +137,22 @@ func TestWithRunTimeout(t *testing.T) {
 		_, _, err := withRunTimeout(cmd)
 		require.Error(t, err)
 	})
+}
+
+func TestExitCode(t *testing.T) {
+	t.Parallel()
+
+	newCmd := func(args ...string) error {
+		cmd := NewRootCmd("v", "c", "d")
+		cmd.SetArgs(args)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		return cmd.Execute()
+	}
+
+	assert.Equal(t, 0, ExitCode(nil))
+	assert.Equal(t, 1, ExitCode(errors.New("sync failed")))
+	assert.Equal(t, 2, ExitCode(newCmd("sync", "--nope")), "unknown flag")
+	assert.Equal(t, 2, ExitCode(newCmd("sync")), "missing --config")
+	assert.Equal(t, 2, ExitCode(newCmd("sync", "--config", filepath.Join(t.TempDir(), "missing.yaml"))), "unreadable config")
 }

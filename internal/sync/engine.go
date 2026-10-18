@@ -7,12 +7,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	gosync "sync"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 	"github.com/fullstacks-gmbh/airgapper/internal/pattern"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/registry"
 )
 
 // maxConcurrency is the maximum number of resources processed in parallel.
@@ -53,15 +53,13 @@ func NewEngine(transporters []domain.Transporter, scanners map[string]domain.Sca
 // encounter errors. A top-level error is returned only if the context is
 // cancelled or an unrecoverable infrastructure error occurs.
 func (e *Engine) Run(ctx context.Context, resources []domain.Resource, opts domain.SyncOptions) ([]domain.SyncResult, error) {
-	var (
-		mu      gosync.Mutex
-		results []domain.SyncResult
-		g       errgroup.Group
-	)
+	// Each goroutine writes only its own slot, so results keep config order.
+	results := make([]domain.SyncResult, len(resources))
+	var g errgroup.Group
 
 	g.SetLimit(maxConcurrency)
 
-	for _, res := range resources {
+	for i, res := range resources {
 		g.Go(func() error {
 			result, err := e.processResource(ctx, res, opts)
 			if err != nil {
@@ -77,9 +75,7 @@ func (e *Engine) Run(ctx context.Context, resources []domain.Resource, opts doma
 				result = failedResource(res, err)
 			}
 
-			mu.Lock()
-			results = append(results, *result)
-			mu.Unlock()
+			results[i] = *result
 
 			return nil
 		})
@@ -204,13 +200,15 @@ func (e *Engine) expandVersions(ctx context.Context, t domain.Transporter, res d
 		}
 
 		// Version is a pattern; list available versions and filter.
-		var creds *domain.Credential
-		if res.SourceCredentialsRef != "" && opts.Credentials != nil {
-			c, err := opts.Credentials.ResolveByRef(res.SourceCredentialsRef, credentialTypeForResource(res.Type))
-			if err != nil {
-				return nil, nil, fmt.Errorf("resolve source credentials for pattern expansion: %w", err)
-			}
-			creds = c
+		// Same lookup as the transporters: by reference, else by registry host
+		// (git has no registry, so its repository URL is the key).
+		host := res.Source.Registry
+		if host == "" {
+			host = res.Source.Repository
+		}
+		creds, err := registry.ResolveCredentials(res.SourceCredentialsRef, host, credentialTypeForResource(res.Type), opts.Credentials)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve source credentials for pattern expansion: %w", err)
 		}
 
 		available, err := t.ListVersions(ctx, res.Source, creds)
@@ -273,6 +271,17 @@ type scanOutcome struct {
 	ops []domain.OperationRecord
 }
 
+// maxLoggedScannerOutput bounds how much scanner stderr one log line carries.
+const maxLoggedScannerOutput = 2048
+
+// truncate shortens s to at most n bytes.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "...(truncated)"
+}
+
 // scanVersions runs the configured scanner against each version of the
 // resource. If the scanner cannot be found, an error is returned.
 func (e *Engine) scanVersions(ctx context.Context, res domain.Resource, logger *slog.Logger) (scanOutcome, error) {
@@ -317,6 +326,14 @@ func (e *Engine) scanVersions(ctx context.Context, res domain.Resource, logger *
 			)
 			reject(version, fmt.Sprintf("scanner %q could not run: %s", res.ScannerRef, err), err)
 			continue
+		}
+
+		if result.ErrorOutput != "" {
+			logger.Debug("scanner stderr",
+				slog.String("scanner", res.ScannerRef),
+				slog.String("version", version),
+				slog.String("stderr", truncate(result.ErrorOutput, maxLoggedScannerOutput)),
+			)
 		}
 
 		if !result.Passed {

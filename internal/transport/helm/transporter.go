@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"go.podman.io/image/v5/docker"
+	"go.podman.io/image/v5/types"
 	"helm.sh/helm/v4/pkg/registry"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
@@ -85,6 +86,45 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 			[]domain.OperationRecord{op(domain.OpFail, "resolve target credentials: "+err.Error())}
 	}
 
+	// settle checks the destination and decides whether the version needs
+	// syncing at all: it returns done=true with the final result for a dry run, a
+	// skip, or a failed check. pulled records whether the chart was already
+	// downloaded, for the operation log.
+	settle := func(dest domain.Endpoint, ref string, pulled bool) (exists, done bool, vr domain.VersionResult, ops []domain.OperationRecord) {
+		var prior []domain.OperationRecord
+		if pulled {
+			prior = []domain.OperationRecord{op(domain.OpPull, "pulled from source")}
+		}
+		// Helm destinations are OCI registries. Force OCI handling for private
+		// registry hostnames that are not part of the source auto-detection list.
+		if !IsOCIRegistry(dest.Registry) {
+			dest.Registry = "oci://" + dest.Registry
+		}
+		exists, err := t.Exists(ctx, dest, version, dstCred)
+		if err != nil {
+			checkErr := fmt.Errorf("check destination: %w", err)
+			return false, true, domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: checkErr, Message: checkErr.Error()},
+				append(prior, op(domain.OpFail, checkErr.Error()))
+		}
+		if opts.DryRun {
+			vr, ops = transport.DryRunResult(resource.PushMode, version, exists, logger, op)
+			return exists, true, vr, append(prior, ops...)
+		}
+		if exists && resource.PushMode == domain.PushModeSkip {
+			logger.Info("chart already exists at destination, skipping")
+			return exists, true, domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "already exists"},
+				append(prior, op(domain.OpSkip, "already exists"))
+		}
+		return exists, false, domain.VersionResult{}, nil
+	}
+
+	// Decide before downloading, using the destination name known from the
+	// configuration, so repeat runs and dry runs do not fetch every chart.
+	exists, done, vr, ops := settle(destination, dstRef, false)
+	if done {
+		return vr, ops
+	}
+
 	// Pull chart from source.
 	logger.Info("pulling chart from source")
 	var chartData []byte
@@ -127,31 +167,19 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 			[]domain.OperationRecord{op(domain.OpPull, "pulled from source"), op(domain.OpFail, "prepare chart: "+err.Error())}
 	}
 
+	checkedRef := dstRef
 	destination.Repository = destinationChartRepository(resource.Destination.Repository, resource.Source.Repository, targetChart)
 	resource.Destination.Repository = destination.Repository
 	dstRef = NormalizeOCIRef(destination.Registry, destination.Repository, version)
 	logger = logger.With("dst", dstRef, "chart_name", targetChart)
 
-	// Helm destinations are OCI registries. Force OCI handling for private
-	// registry hostnames that are not part of the source auto-detection list.
-	destinationForExistence := destination
-	if !IsOCIRegistry(destinationForExistence.Registry) {
-		destinationForExistence.Registry = "oci://" + destinationForExistence.Registry
-	}
-	exists, err := t.Exists(ctx, destinationForExistence, version, dstCred)
-	if err != nil {
-		logger.Warn("failed to check existence at destination", "error", err)
-	}
-
-	// Dry-run mode: report what would happen without mutating.
-	if opts.DryRun {
-		return transport.DryRunResult(resource.PushMode, version, exists, logger, op)
-	}
-
-	if exists && resource.PushMode == domain.PushModeSkip {
-		logger.Info("chart already exists at destination, skipping")
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusSkipped, Message: "already exists"},
-			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
+	// The chart's own name can differ from the one assumed above; check again
+	// only when the destination actually changed.
+	if dstRef != checkedRef {
+		exists, done, vr, ops = settle(destination, dstRef, true)
+		if done {
+			return vr, ops
+		}
 	}
 
 	destinationClient, err := newRegistryClient(domain.Endpoint{}, resource.Destination)
@@ -179,8 +207,7 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 
 	logger.Info("chart synced successfully")
 
-	var ops []domain.OperationRecord
-	ops = append(ops, op(domain.OpPull, "pulled from source"))
+	ops = []domain.OperationRecord{op(domain.OpPull, "pulled from source")}
 	if exists && resource.PushMode == domain.PushModeForce {
 		ops = append(ops, op(domain.OpOverwrite, "overwritten at destination"))
 	} else {
@@ -238,7 +265,7 @@ func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, vers
 		return false, fmt.Errorf("parse reference %q: %w", refStr, err)
 	}
 
-	return transportregistry.ManifestExists(ctx, transportregistry.SystemContext(creds, endpoint.Insecure, endpoint.CACertPath), ref, t.logger)
+	return transportregistry.ManifestExists(ctx, registrySystemContext(creds, endpoint), ref, t.logger)
 }
 
 // ListVersions returns all available versions for a chart at the given
@@ -255,7 +282,7 @@ func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint
 		return nil, fmt.Errorf("parse repo %q: %w", repo, err)
 	}
 
-	sys := transportregistry.SystemContext(creds, endpoint.Insecure, endpoint.CACertPath)
+	sys := registrySystemContext(creds, endpoint)
 	tags, err := docker.GetRepositoryTags(ctx, sys, ref)
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %q: %w", repo, err)
@@ -266,6 +293,13 @@ func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint
 	}
 
 	return tags, nil
+}
+
+// registrySystemContext builds the containers/image context for lookups against
+// an OCI endpoint. Local and http:// registries are plain HTTP, as in
+// newRegistryClient, so lookups must not insist on TLS for them.
+func registrySystemContext(creds *domain.Credential, endpoint domain.Endpoint) *types.SystemContext {
+	return transportregistry.SystemContext(creds, endpoint.Insecure || needsPlainHTTP(endpoint.Registry), endpoint.CACertPath)
 }
 
 func newRegistryClient(source, destination domain.Endpoint) (*registry.Client, error) {

@@ -426,3 +426,74 @@ func TestEngine_OneFailingResourceDoesNotAbortTheRest(t *testing.T) {
 	assert.Equal(t, 2, summary.Failed, "both versions of the broken resource are counted")
 	assert.Equal(t, 3, summary.TotalVersions, "no version silently disappears")
 }
+
+// fakeCredentialStore resolves credentials by exact name.
+type fakeCredentialStore struct{ byName map[string]*domain.Credential }
+
+func (f fakeCredentialStore) Resolve(host string, _ domain.CredentialType) (*domain.Credential, error) {
+	return f.byName[host], nil
+}
+
+func (f fakeCredentialStore) ResolveByRef(ref string, _ domain.CredentialType) (*domain.Credential, error) {
+	if c, ok := f.byName[ref]; ok {
+		return c, nil
+	}
+	return nil, domain.ErrCredentialNotFound
+}
+
+func TestEngine_PatternExpansionUsesHostCredentials(t *testing.T) {
+	t.Parallel()
+
+	want := &domain.Credential{Name: "registry.example.com", Username: "u"}
+	var got *domain.Credential
+	mt := &mockTransporter{
+		typeFn: func() domain.ResourceType { return domain.ResourceTypeImage },
+		syncFn: func(_ context.Context, r domain.Resource, _ domain.SyncOptions) (*domain.SyncResult, error) {
+			return &domain.SyncResult{Resource: r}, nil
+		},
+		listVersionsFn: func(_ context.Context, _ domain.Endpoint, creds *domain.Credential) ([]string, error) {
+			got = creds
+			return []string{"v1.0.0"}, nil
+		},
+	}
+	engine := sync.NewEngine([]domain.Transporter{mt}, nil, discardLogger())
+
+	_, err := engine.Run(context.Background(), []domain.Resource{{
+		Type:        domain.ResourceTypeImage,
+		Source:      domain.Endpoint{Registry: "registry.example.com", Repository: "app"},
+		Destination: domain.Endpoint{Registry: "internal.io", Repository: "app"},
+		Versions:    []string{`v1\..*`},
+	}}, domain.SyncOptions{Credentials: fakeCredentialStore{byName: map[string]*domain.Credential{"registry.example.com": want}}})
+
+	require.NoError(t, err)
+	assert.Same(t, want, got, "no source_credentials_ref: the host-named credential must be used to list versions")
+}
+
+func TestEngine_ResultsKeepConfigOrder(t *testing.T) {
+	t.Parallel()
+
+	mt := &mockTransporter{
+		typeFn: func() domain.ResourceType { return domain.ResourceTypeImage },
+		syncFn: func(_ context.Context, r domain.Resource, _ domain.SyncOptions) (*domain.SyncResult, error) {
+			return &domain.SyncResult{Resource: r}, nil
+		},
+	}
+	engine := sync.NewEngine([]domain.Transporter{mt}, nil, discardLogger())
+
+	var resources []domain.Resource
+	for i := range 20 {
+		resources = append(resources, domain.Resource{
+			Type:     domain.ResourceTypeImage,
+			Source:   domain.Endpoint{Registry: "r.io", Repository: fmt.Sprintf("app%02d", i)},
+			Versions: []string{"v1"},
+		})
+	}
+
+	results, err := engine.Run(context.Background(), resources, domain.SyncOptions{})
+
+	require.NoError(t, err)
+	require.Len(t, results, len(resources))
+	for i, r := range results {
+		assert.Equal(t, resources[i].Source, r.Resource.Source)
+	}
+}

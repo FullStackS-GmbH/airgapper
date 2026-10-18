@@ -23,11 +23,18 @@ func Validate(cfg *Config) error {
 	if err := validateScanners(cfg.Scanners); err != nil {
 		return err
 	}
+	scanners := make(map[string]bool, len(cfg.Scanners))
+	for _, s := range cfg.Scanners {
+		scanners[strings.TrimSpace(s.Name)] = true
+	}
 
 	// Validate each resource.
 	for i, rc := range cfg.Resources {
 		if err := validateResource(i, &rc); err != nil {
 			return err
+		}
+		if ref := rc.ScannerRef; ref != "" && !scanners[ref] {
+			return fmt.Errorf("resource[%d]: scanner_ref %q matches no scanner: %w", i, ref, domain.ErrInvalidConfig)
 		}
 	}
 

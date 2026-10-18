@@ -95,6 +95,12 @@ func TestMatch(t *testing.T) {
 			candidates: []string{"v1.0", "v2.0", "v3.0"},
 			want:       []string{"v1.0", "v2.0"},
 		},
+		{
+			name:       "alternation is anchored as a whole",
+			pattern:    "v1\\..*|v2\\..*",
+			candidates: []string{"v1.0", "v2.0", "rc-v2.0", "xv1.0", "v3.0"},
+			want:       []string{"v1.0", "v2.0"},
+		},
 	}
 
 	for _, tt := range tests {

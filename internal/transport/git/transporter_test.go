@@ -61,7 +61,7 @@ func TestGitDryRunDestination(t *testing.T) {
 				Type:        domain.ResourceTypeGit,
 				Source:      domain.Endpoint{Repository: server.URL + "/source.git"},
 				Destination: domain.Endpoint{Repository: server.URL + "/target.git"},
-				Versions:    []string{"main"}, PushMode: domain.PushModeSkip,
+				Versions:    []string{"refs/heads/main"}, PushMode: domain.PushModeSkip,
 			}
 			result, err := transporter.Sync(context.Background(), resource, domain.SyncOptions{DryRun: true})
 			require.NoError(t, err)

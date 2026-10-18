@@ -21,34 +21,29 @@ const (
 	maxChartArchiveSize = 512 << 20
 )
 
-// legacyHTTPClient bounds every legacy-repo request. http.DefaultClient has no
-// timeouts at all, so a half-open connection to a chart repository hangs the
+// newLegacyTransport bounds every legacy-repo request. http.DefaultClient has
+// no timeouts at all, so a half-open connection to a chart repository hangs the
 // run forever — --timeout is optional and often unset. The limits are on
 // connection setup and time-to-first-byte rather than total duration, so a
 // large chart on a slow air-gap link still downloads.
-var legacyHTTPClient = &http.Client{
-	Transport: &http.Transport{
+func newLegacyTransport(tlsCfg *tls.Config) *http.Transport {
+	return &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 60 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		IdleConnTimeout:       90 * time.Second,
-	},
+		TLSClientConfig:       tlsCfg,
+	}
 }
 
-// insecureLegacyHTTPClient mirrors legacyHTTPClient but skips TLS certificate
-// verification, for endpoints explicitly marked insecure.
+var legacyHTTPClient = &http.Client{Transport: newLegacyTransport(nil)}
+
+// insecureLegacyHTTPClient skips TLS certificate verification, for endpoints
+// explicitly marked insecure.
 var insecureLegacyHTTPClient = &http.Client{
-	Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 60 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		IdleConnTimeout:       90 * time.Second,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // explicit opt-in via endpoint.Insecure
-	},
+	Transport: newLegacyTransport(&tls.Config{InsecureSkipVerify: true}), //nolint:gosec // explicit opt-in via endpoint.Insecure
 }
 
 type legacyIndex struct {
@@ -114,7 +109,13 @@ func (t *Transporter) pullLegacyChart(ctx context.Context, endpoint domain.Endpo
 		return nil, "", fmt.Errorf("chart %q version %q: %w", endpoint.Repository, version, domain.ErrNotFound)
 	}
 
-	data, err := httpGet(ctx, chartURL, creds, maxChartArchiveSize, endpoint.Insecure, endpoint.CACertPath)
+	// index.yaml may point at any host; the repository credentials belong to the
+	// repository host only.
+	chartCreds := creds
+	if !sameHost(legacyRepoBaseURL(endpoint.Registry), chartURL) {
+		chartCreds = nil
+	}
+	data, err := httpGet(ctx, chartURL, chartCreds, maxChartArchiveSize, endpoint.Insecure, endpoint.CACertPath)
 	if err != nil {
 		return nil, "", fmt.Errorf("download chart %q: %w", chartURL, err)
 	}
@@ -150,6 +151,13 @@ func fetchLegacyIndex(ctx context.Context, registry string, creds *domain.Creden
 		idx.Entries = map[string][]legacyChartVersion{}
 	}
 	return &idx, nil
+}
+
+// sameHost reports whether two URLs have the same scheme, host and port.
+func sameHost(a, b string) bool {
+	ua, errA := url.Parse(a)
+	ub, errB := url.Parse(b)
+	return errA == nil && errB == nil && ua.Scheme == ub.Scheme && ua.Host == ub.Host
 }
 
 func legacyRepoBaseURL(registry string) string {
@@ -189,17 +197,7 @@ func legacyClientFor(insecure bool, certPath string) (*http.Client, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &http.Client{
-			Transport: &http.Transport{
-				Proxy:                 http.ProxyFromEnvironment,
-				DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 60 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-				IdleConnTimeout:       90 * time.Second,
-				TLSClientConfig:       &tls.Config{RootCAs: pool},
-			},
-		}, nil
+		return &http.Client{Transport: newLegacyTransport(&tls.Config{RootCAs: pool})}, nil
 	default:
 		return legacyHTTPClient, nil
 	}
