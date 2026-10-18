@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"go.podman.io/image/v5/docker"
@@ -131,7 +132,7 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 	if IsOCIRegistry(resource.Source.Registry) {
 		// Source and destination use separate clients because Helm's Login
 		// installs a host-scoped credential callback on the client.
-		sourceClient, err := newRegistryClient(resource.Source, domain.Endpoint{})
+		sourceClient, err := newRegistryClient(ctx, resource.Source, domain.Endpoint{})
 		if err != nil {
 			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create source registry client: %w", err)},
 				[]domain.OperationRecord{op(domain.OpFail, "create source registry client: "+err.Error())}
@@ -182,7 +183,7 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 		}
 	}
 
-	destinationClient, err := newRegistryClient(domain.Endpoint{}, resource.Destination)
+	destinationClient, err := newRegistryClient(ctx, domain.Endpoint{}, resource.Destination)
 	if err != nil {
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create destination registry client: %w", err)},
 			[]domain.OperationRecord{op(domain.OpFail, "create destination registry client: "+err.Error())}
@@ -229,7 +230,7 @@ func (t *Transporter) PullChartBytes(ctx context.Context, resource domain.Resour
 		return data, err
 	}
 
-	client, err := newRegistryClient(resource.Source, domain.Endpoint{})
+	client, err := newRegistryClient(ctx, resource.Source, domain.Endpoint{})
 	if err != nil {
 		return nil, fmt.Errorf("create registry client: %w", err)
 	}
@@ -302,14 +303,19 @@ func registrySystemContext(creds *domain.Credential, endpoint domain.Endpoint) *
 	return transportregistry.SystemContext(creds, endpoint.Insecure || needsPlainHTTP(endpoint.Registry), endpoint.CACertPath)
 }
 
-func newRegistryClient(source, destination domain.Endpoint) (*registry.Client, error) {
-	if (IsOCIRegistry(source.Registry) && needsPlainHTTP(source.Registry)) || needsPlainHTTP(destination.Registry) {
-		return registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptPlainHTTP())
-	}
-	if source.Insecure || destination.Insecure {
-		return registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptHTTPClient(insecureHTTPClient))
-	}
-	if certDir := source.CACertPath; certDir != "" || destination.CACertPath != "" {
+// newRegistryClient builds a Helm registry client for the given endpoints. All
+// of its requests follow ctx, see ctxTransport.
+func newRegistryClient(ctx context.Context, source, destination domain.Endpoint) (*registry.Client, error) {
+	opts := []registry.ClientOption{registry.ClientOptWriter(io.Discard)}
+	base := http.RoundTripper(registry.NewTransport(false))
+
+	switch {
+	case (IsOCIRegistry(source.Registry) && needsPlainHTTP(source.Registry)) || needsPlainHTTP(destination.Registry):
+		opts = append(opts, registry.ClientOptPlainHTTP())
+	case source.Insecure || destination.Insecure:
+		base = insecureHTTPClient.Transport
+	case source.CACertPath != "" || destination.CACertPath != "":
+		certDir := source.CACertPath
 		if certDir == "" {
 			certDir = destination.CACertPath
 		}
@@ -317,9 +323,11 @@ func newRegistryClient(source, destination domain.Endpoint) (*registry.Client, e
 		if err != nil {
 			return nil, fmt.Errorf("configure registry client CA cert: %w", err)
 		}
-		return registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptHTTPClient(client))
+		base = client.Transport
 	}
-	return registry.NewClient(registry.ClientOptWriter(io.Discard))
+
+	opts = append(opts, registry.ClientOptHTTPClient(&http.Client{Transport: ctxTransport{base: base, ctx: ctx}}))
+	return registry.NewClient(opts...)
 }
 
 func chartRef(endpoint domain.Endpoint, version string) string {

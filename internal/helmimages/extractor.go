@@ -4,7 +4,9 @@ package helmimages
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 
@@ -124,8 +126,20 @@ func (e *Extractor) Extract(ctx context.Context, resources []domain.Resource, cr
 
 			label := fmt.Sprintf("%s:%s", chartRef, version)
 			for _, content := range rendered {
-				for _, ref := range ExtractImagesFromYAML(content) {
+				refs, err := ExtractImagesFromYAML(content)
+				if err != nil {
+					e.logger.Warn("chart version has malformed rendered YAML", "chart", chartRef, "version", version, "error", err)
+					skipped = append(skipped, SkippedVersion{Chart: chartRef, Version: version, Reason: err.Error()})
+				}
+				for _, ref := range refs {
 					reg, repo, tag := ParseImageRef(ref)
+					if isDigestPinned(ref) {
+						// A digest-pinned image cannot be mirrored by tag; say so
+						// instead of leaving it out of the result unnoticed.
+						e.logger.Warn("skipping digest-pinned image", "chart", chartRef, "version", version, "image", ref)
+						skipped = append(skipped, SkippedVersion{Chart: chartRef, Version: version, Reason: fmt.Sprintf("image %q is pinned by digest and cannot be mirrored by tag", ref)})
+						continue
+					}
 					if tag == "" || reg == "" {
 						continue
 					}
@@ -172,22 +186,36 @@ func ParseImageRef(ref string) (registry, repository, tag string) {
 	return registry, repository, ""
 }
 
+// isDigestPinned reports whether ref is a valid reference that carries a digest.
+func isDigestPinned(ref string) bool {
+	named, err := reference.ParseNormalizedNamed(strings.TrimSpace(ref))
+	if err != nil {
+		return false
+	}
+	_, ok := named.(reference.Digested)
+	return ok
+}
+
 // ExtractImagesFromYAML walks all YAML documents in content and returns the
-// values of every "image:" scalar key found.
-func ExtractImagesFromYAML(content string) []string {
+// values of every "image:" scalar key found. If a document is malformed the
+// images found before it are returned together with the error, so the caller
+// can report the extraction as incomplete.
+func ExtractImagesFromYAML(content string) ([]string, error) {
 	var images []string
 	dec := yaml.NewDecoder(strings.NewReader(content))
 	for {
 		var doc yaml.Node
 		if err := dec.Decode(&doc); err != nil {
-			break
+			if errors.Is(err, io.EOF) {
+				return images, nil
+			}
+			return images, fmt.Errorf("parse rendered YAML: %w", err)
 		}
 		if doc.Kind == 0 {
 			continue
 		}
 		walkYAMLNode(&doc, &images)
 	}
-	return images
 }
 
 func walkYAMLNode(node *yaml.Node, images *[]string) {
