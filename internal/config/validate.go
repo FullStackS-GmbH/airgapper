@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,8 +12,8 @@ import (
 // ensures that every resource has the required fields for its type, that push
 // modes are valid, and that scanner names are unique.
 //
-// On the first validation error the function returns a descriptive message
-// wrapped around domain.ErrInvalidConfig. This allows callers to use
+// Every problem found is reported, joined into one error; each is wrapped
+// around domain.ErrInvalidConfig so callers can use
 // errors.Is(err, domain.ErrInvalidConfig) for matching.
 func Validate(cfg *Config) error {
 	if cfg == nil {
@@ -28,17 +29,18 @@ func Validate(cfg *Config) error {
 		scanners[strings.TrimSpace(s.Name)] = true
 	}
 
-	// Validate each resource.
+	// Validate each resource, collecting every problem rather than stopping at
+	// the first so one run shows everything that needs fixing.
+	var errs []error
 	for i, rc := range cfg.Resources {
 		if err := validateResource(i, &rc); err != nil {
-			return err
-		}
-		if ref := rc.ScannerRef; ref != "" && !scanners[ref] {
-			return fmt.Errorf("resource[%d]: scanner_ref %q matches no scanner: %w", i, ref, domain.ErrInvalidConfig)
+			errs = append(errs, err)
+		} else if ref := rc.ScannerRef; ref != "" && !scanners[ref] {
+			errs = append(errs, fmt.Errorf("resource[%d]: scanner_ref %q matches no scanner: %w", i, ref, domain.ErrInvalidConfig))
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // validateScanners ensures that all scanner names are unique and non-empty.
@@ -83,6 +85,9 @@ func validateResource(index int, rc *ResourceConfig) error {
 		if len(rc.Tags) == 0 {
 			return fmt.Errorf("%s: at least one tag is required for image resources: %w", prefix, domain.ErrInvalidConfig)
 		}
+		if strings.TrimSpace(rc.DestinationChart) != "" {
+			return fmt.Errorf("%s: destination_chart applies to helm resources only: %w", prefix, domain.ErrInvalidConfig)
+		}
 
 	case "helm":
 		if err := requireNonEmpty(prefix, map[string]string{
@@ -95,6 +100,9 @@ func validateResource(index int, rc *ResourceConfig) error {
 		}
 		if len(rc.Versions) == 0 {
 			return fmt.Errorf("%s: at least one version is required for helm resources: %w", prefix, domain.ErrInvalidConfig)
+		}
+		if strings.TrimSpace(rc.PolicyPath) != "" {
+			return fmt.Errorf("%s: policy_path applies to image resources only, charts are not signature-checked: %w", prefix, domain.ErrInvalidConfig)
 		}
 		if name := strings.TrimSpace(rc.DestinationChart); name != "" && strings.Contains(strings.Trim(name, "/"), "/") {
 			return fmt.Errorf("%s: destination_chart must be a chart name, not a repository path: %w", prefix, domain.ErrInvalidConfig)
@@ -109,6 +117,12 @@ func validateResource(index int, rc *ResourceConfig) error {
 		}
 		if len(rc.Refs) == 0 {
 			return fmt.Errorf("%s: at least one ref is required for git resources: %w", prefix, domain.ErrInvalidConfig)
+		}
+		if strings.TrimSpace(rc.PolicyPath) != "" || strings.TrimSpace(rc.DestinationChart) != "" {
+			return fmt.Errorf("%s: policy_path and destination_chart do not apply to git resources: %w", prefix, domain.ErrInvalidConfig)
+		}
+		if rc.SourceInsecure || rc.DestinationInsecure || strings.TrimSpace(rc.SourceCACert) != "" || strings.TrimSpace(rc.DestinationCACert) != "" {
+			return fmt.Errorf("%s: the insecure and ca_cert options do not apply to git resources: %w", prefix, domain.ErrInvalidConfig)
 		}
 
 	default:

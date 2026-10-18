@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/fullstacks-gmbh/airgapper/internal/sync"
 )
 
 func TestSyncDryRunReportsDestinationFailureAndContinues(t *testing.T) {
@@ -46,4 +49,31 @@ func TestSyncDryRunReportsDestinationFailureAndContinues(t *testing.T) {
 	assert.Contains(t, string(report), "check destination")
 	_, err = os.Stat(filepath.Join(dir, "missing.git"))
 	assert.True(t, os.IsNotExist(err), "dry-run must not create a destination")
+}
+
+func TestSyncJSONOutput(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	empty := filepath.Join(dir, "empty.git")
+	_, err := gogit.PlainInit(empty, true)
+	require.NoError(t, err)
+	configPath := filepath.Join(dir, "git.airgapper.yaml")
+	reportPath := filepath.Join(dir, "report.log")
+	cfg := fmt.Sprintf(`resources:
+  - type: git
+    source_repo: https://example.com/source.git
+    destination_repo: %s
+    refs: [refs/heads/main]
+`, empty)
+	require.NoError(t, os.WriteFile(configPath, []byte(cfg), 0o600))
+
+	out, err := runCLI(t, "sync", "--config", configPath, "--dry-run", "--dry-run-log", reportPath, "--output", "json")
+
+	require.NoError(t, err)
+	var report sync.Report
+	require.NoError(t, json.Unmarshal([]byte(out), &report), "stdout must be exactly one JSON document")
+	assert.Equal(t, reportPath, report.DryRunLog)
+	assert.Equal(t, 1, report.Summary.Skipped)
+	require.Len(t, report.Resources, 1)
+	assert.Equal(t, "skipped", report.Resources[0].Versions[0].Status)
 }

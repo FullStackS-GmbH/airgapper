@@ -132,6 +132,15 @@ func retryPolicy(cmd *cobra.Command) (retry.Policy, error) {
 	return retry.Policy{Attempts: attempts, BaseDelay: time.Duration(delay) * time.Second}, nil
 }
 
+// outputFormat reads --output (or AIRGAPPER_OUTPUT): "text" or "json".
+func outputFormat(cmd *cobra.Command) (string, error) {
+	format := stringFlag(cmd, "output", "OUTPUT")
+	if format != "text" && format != "json" {
+		return "", usage(fmt.Errorf("--output must be text or json, got %q", format))
+	}
+	return format, nil
+}
+
 // NewRootCmd creates the root command with all subcommands registered. The
 // version, commit, and date parameters are typically injected via ldflags at
 // build time.
@@ -160,6 +169,7 @@ func NewRootCmd(version, commit, date string) *cobra.Command {
 
 	// Register subcommands.
 	cmd.AddCommand(newSyncCmd())
+	cmd.AddCommand(newValidateCmd())
 	cmd.AddCommand(newVersionCmd(version, commit, date))
 	cmd.AddCommand(newHelmCmd())
 

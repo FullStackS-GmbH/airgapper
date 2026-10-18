@@ -313,3 +313,54 @@ func TestValidate_UnknownScannerRef(t *testing.T) {
 	cfg.Resources[0].ScannerRef = "trivy"
 	require.NoError(t, config.Validate(cfg))
 }
+
+func TestValidate_OptionsThatDoNotApplyToTheResourceType(t *testing.T) {
+	t.Parallel()
+
+	image := config.ResourceConfig{Type: "image", Source: "a.io/x", Destination: "b.io/x", Tags: []string{"v1"}}
+	helm := config.ResourceConfig{Type: "helm", SourceRegistry: "a.io", SourceChart: "c", DestinationRegistry: "b.io", DestinationRepo: "r", Versions: []string{"1"}}
+	git := config.ResourceConfig{Type: "git", SourceRepo: "https://a/x.git", DestinationRepo: "https://b/x.git", Refs: []string{"main"}}
+
+	for _, tc := range []struct {
+		name   string
+		mutate func() config.ResourceConfig
+		want   string
+	}{
+		{"policy_path on helm", func() config.ResourceConfig { r := helm; r.PolicyPath = "p.json"; return r }, "policy_path"},
+		{"policy_path on git", func() config.ResourceConfig { r := git; r.PolicyPath = "p.json"; return r }, "policy_path"},
+		{"destination_chart on image", func() config.ResourceConfig { r := image; r.DestinationChart = "c"; return r }, "destination_chart"},
+		{"source_insecure on git", func() config.ResourceConfig { r := git; r.SourceInsecure = true; return r }, "insecure"},
+		{"destination_ca_cert on git", func() config.ResourceConfig { r := git; r.DestinationCACert = "/ca"; return r }, "ca_cert"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := config.Validate(&config.Config{Resources: []config.ResourceConfig{tc.mutate()}})
+			require.ErrorIs(t, err, domain.ErrInvalidConfig)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+
+	t.Run("applicable options stay valid", func(t *testing.T) {
+		t.Parallel()
+		img := image
+		img.PolicyPath, img.SourceInsecure = "p.json", true
+		h := helm
+		h.DestinationChart, h.DestinationInsecure = "c", true
+		require.NoError(t, config.Validate(&config.Config{Resources: []config.ResourceConfig{img, h, git}}))
+	})
+}
+
+func TestValidate_ReportsEveryProblem(t *testing.T) {
+	t.Parallel()
+
+	err := config.Validate(&config.Config{Resources: []config.ResourceConfig{
+		{Type: "image", Source: "a.io/x", Destination: "b.io/x"},
+		{Type: "bogus"},
+		{Type: "git", SourceRepo: "https://a/x.git"},
+	}})
+
+	require.ErrorIs(t, err, domain.ErrInvalidConfig)
+	for _, want := range []string{"resource[0]", "resource[1]", "resource[2]"} {
+		assert.Contains(t, err.Error(), want)
+	}
+}
