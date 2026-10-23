@@ -203,6 +203,13 @@ resources:
 ```
 
 The destination OCI artifact name is automatically derived from `Chart.yaml`, which also handles vendor artifacts whose repository name differs from the real chart name.
+
+Chart pushes include `application/vnd.oci.image.manifest.v1+json` in the manifest
+body and deploy the final version tag directly. This supports Artifactory
+registries that otherwise mislabel untagged Helm manifests as Docker schema 1,
+causing Helm 4.0.4's digest-fetch/tag step to fail with
+`mismatch response Content-Type`. Chart configuration and layer media types stay
+compatible with Helm OCI clients.
 Set `destination_chart` only for an explicit name override.
 
 ### Git Resources

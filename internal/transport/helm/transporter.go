@@ -154,23 +154,10 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
 	}
 
-	destinationClient, err := newRegistryClient(domain.Endpoint{}, resource.Destination)
-	if err != nil {
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create destination registry client: %w", err)},
-			[]domain.OperationRecord{op(domain.OpFail, "create destination registry client: "+err.Error())}
-	}
-	if dstCred != nil {
-		dstHost := extractHost(resource.Destination.Registry)
-		if loginErr := destinationClient.Login(dstHost, registry.LoginOptBasicAuth(dstCred.Username, dstCred.Password)); loginErr != nil {
-			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to destination %q: %w", dstHost, loginErr)},
-				[]domain.OperationRecord{op(domain.OpFail, "login to destination: "+loginErr.Error())}
-		}
-	}
-
-	// Push chart to destination. Helm v4 strict mode expects the push target to
-	// end in "/{chart-name}:{chart-version}", which dstRef already does.
+	// Include the OCI media type in the manifest body and push the final tag
+	// directly, avoiding Helm's digest-upload/GET/tag compatibility failure.
 	logger.Info("pushing chart to destination")
-	_, err = destinationClient.Push(chartData, dstRef)
+	err = pushChart(ctx, chartData, destination, version, dstCred)
 	if err != nil {
 		logger.Error("failed to push chart", "error", err)
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push chart: %w", err)},
