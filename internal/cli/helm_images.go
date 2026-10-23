@@ -40,25 +40,25 @@ func runHelmImages(cmd *cobra.Command, _ []string) error {
 	logger := logging.NewLogger(debug, logFormat)
 
 	if configPath == "" {
-		return fmt.Errorf("--config flag or AIRGAPPER_CONFIG env var is required")
+		return usage(fmt.Errorf("--config flag or AIRGAPPER_CONFIG env var is required"))
 	}
 	if outputPath == "" {
-		return fmt.Errorf("--output flag or AIRGAPPER_HELM_IMAGES_OUTPUT env var is required")
+		return usage(fmt.Errorf("--output flag or AIRGAPPER_HELM_IMAGES_OUTPUT env var is required"))
 	}
 	if targetCredRef == "" {
-		return fmt.Errorf("--target-credentials-ref flag or AIRGAPPER_HELM_IMAGES_TARGET_CREDENTIALS_REF env var is required")
+		return usage(fmt.Errorf("--target-credentials-ref flag or AIRGAPPER_HELM_IMAGES_TARGET_CREDENTIALS_REF env var is required"))
 	}
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return usage(fmt.Errorf("load config: %w", err))
 	}
 
 	var credStore domain.CredentialStore
 	if credsPath != "" {
 		creds, err := config.LoadCredentials(credsPath)
 		if err != nil {
-			return fmt.Errorf("load credentials: %w", err)
+			return usage(fmt.Errorf("load credentials: %w", err))
 		}
 		credStore = credentials.NewFileStore(creds)
 	} else {
@@ -68,7 +68,7 @@ func runHelmImages(cmd *cobra.Command, _ []string) error {
 	// Validate target credentials ref and resolve registry hostname early.
 	targetCred, err := credStore.ResolveByRef(targetCredRef, domain.CredentialTypeHelm)
 	if err != nil {
-		return fmt.Errorf("resolve target credentials ref %q: %w", targetCredRef, err)
+		return usage(fmt.Errorf("resolve target credentials ref %q: %w", targetCredRef, err))
 	}
 
 	var helmResources []domain.Resource

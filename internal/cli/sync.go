@@ -50,17 +50,17 @@ func runSync(cmd *cobra.Command, _ []string) error {
 
 	// Validate required flags.
 	if configPath == "" {
-		return fmt.Errorf("--config flag or AIRGAPPER_CONFIG env var is required")
+		return usage(fmt.Errorf("--config flag or AIRGAPPER_CONFIG env var is required"))
 	}
 
 	// Load and validate configuration.
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return usage(fmt.Errorf("load config: %w", err))
 	}
 
 	if err := config.Validate(cfg); err != nil {
-		return fmt.Errorf("validate config: %w", err)
+		return usage(fmt.Errorf("validate config: %w", err))
 	}
 
 	// Load credentials (optional).
@@ -68,7 +68,7 @@ func runSync(cmd *cobra.Command, _ []string) error {
 	if credsPath != "" {
 		creds, err := config.LoadCredentials(credsPath)
 		if err != nil {
-			return fmt.Errorf("load credentials: %w", err)
+			return usage(fmt.Errorf("load credentials: %w", err))
 		}
 		credStore = credentials.NewFileStore(creds)
 	} else {

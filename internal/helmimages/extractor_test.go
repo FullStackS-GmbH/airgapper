@@ -82,7 +82,8 @@ spec:
         - name: git
           image: bitnami/git:2.47.2
 `
-	imgs := helmimages.ExtractImagesFromYAML(content)
+	imgs, err := helmimages.ExtractImagesFromYAML(content)
+	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"bitnami/nginx:1.27.3", "bitnami/git:2.47.2"}, imgs)
 }
 
@@ -93,18 +94,27 @@ func TestExtractImagesFromYAML_MultiDoc(t *testing.T) {
 		"---",
 		"image: sidecar:v2",
 	}, "\n")
-	imgs := helmimages.ExtractImagesFromYAML(content)
+	imgs, err := helmimages.ExtractImagesFromYAML(content)
+	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"app:v1", "sidecar:v2"}, imgs)
 }
 
 func TestExtractImagesFromYAML_Empty(t *testing.T) {
-	imgs := helmimages.ExtractImagesFromYAML("")
+	imgs, err := helmimages.ExtractImagesFromYAML("")
+	require.NoError(t, err)
 	assert.Empty(t, imgs)
 }
 
 func TestExtractImagesFromYAML_InvalidYAML(t *testing.T) {
-	imgs := helmimages.ExtractImagesFromYAML(": invalid: {{.Values.foo}}")
+	imgs, err := helmimages.ExtractImagesFromYAML(": invalid: {{.Values.foo}}")
+	require.Error(t, err)
 	assert.Empty(t, imgs)
+}
+
+func TestExtractImagesFromYAML_MalformedLaterDocumentKeepsEarlierImages(t *testing.T) {
+	imgs, err := helmimages.ExtractImagesFromYAML("image: nginx:1.27\n---\nimage: [unterminated\n")
+	require.Error(t, err)
+	assert.Equal(t, []string{"nginx:1.27"}, imgs)
 }
 
 func TestBuildOutputYAML_Shape(t *testing.T) {

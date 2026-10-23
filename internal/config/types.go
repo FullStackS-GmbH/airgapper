@@ -84,8 +84,10 @@ type ResourceConfig struct {
 	// SourceRepo is the source repository URL for git resources (HTTPS or SSH).
 	SourceRepo string `yaml:"source_repo,omitempty"`
 
-	// Refs lists the git refs (branches, tags, SHAs) to synchronize (git
-	// resources only).
+	// Refs lists the git branches and tags to synchronize (git resources
+	// only). Entries are short names ("main", "v1.0"), full names
+	// ("refs/heads/main"), or regex patterns matched against short names. A
+	// short name that is both a branch and a tag resolves to the branch.
 	Refs []string `yaml:"refs,omitempty"`
 
 	// PushMode controls how artifacts that already exist at the destination are

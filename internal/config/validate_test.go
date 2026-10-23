@@ -294,3 +294,22 @@ func TestValidate_DockerTypeAlias(t *testing.T) {
 	err := config.Validate(cfg)
 	assert.NoError(t, err)
 }
+
+func TestValidate_UnknownScannerRef(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{
+		Scanners: []config.ScannerConfig{{Name: "trivy", Command: "trivy"}},
+		Resources: []config.ResourceConfig{{
+			Type: "image", Source: "a.io/x", Destination: "b.io/x", Tags: []string{"v1"}, ScannerRef: "trivvy",
+		}},
+	}
+
+	err := config.Validate(cfg)
+
+	require.ErrorIs(t, err, domain.ErrInvalidConfig)
+	assert.Contains(t, err.Error(), "trivvy")
+
+	cfg.Resources[0].ScannerRef = "trivy"
+	require.NoError(t, config.Validate(cfg))
+}

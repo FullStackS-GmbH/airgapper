@@ -81,7 +81,9 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 
 	exists, err := t.Exists(ctx, resource.Destination, version, dstCred)
 	if err != nil {
-		logger.Warn("failed to check existence at destination", "error", err)
+		checkErr := fmt.Errorf("check destination: %w", err)
+		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: checkErr, Message: checkErr.Error()},
+			[]domain.OperationRecord{op(domain.OpFail, checkErr.Error())}
 	}
 
 	if opts.DryRun {

@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -16,6 +17,31 @@ import (
 // envPrefix is prepended to the name of every environment variable the CLI
 // reads.
 const envPrefix = "AIRGAPPER_"
+
+// usageError marks an error caused by how the tool was invoked or configured —
+// bad flags, missing or invalid configuration — as opposed to a failure while
+// syncing. main exits with code 2 for these.
+type usageError struct{ err error }
+
+func (e *usageError) Error() string { return e.err.Error() }
+func (e *usageError) Unwrap() error { return e.err }
+
+// usage marks err as a usage or configuration error.
+func usage(err error) error { return &usageError{err: err} }
+
+// ExitCode maps an error returned by the root command to the process exit
+// code: 0 for none, 2 for usage or configuration errors, 1 otherwise.
+func ExitCode(err error) int {
+	var u *usageError
+	switch {
+	case err == nil:
+		return 0
+	case errors.As(err, &u):
+		return 2
+	default:
+		return 1
+	}
+}
 
 // rawFlag resolves a single setting to its string form. An explicitly provided
 // command-line flag wins; otherwise the environment variable is used; otherwise
@@ -48,9 +74,9 @@ func boolFlag(cmd *cobra.Command, name, env string) (bool, error) {
 	b, err := strconv.ParseBool(v)
 	if err != nil {
 		if fromEnv {
-			return false, fmt.Errorf("%s%s=%q is not a boolean", envPrefix, env, v)
+			return false, usage(fmt.Errorf("%s%s=%q is not a boolean", envPrefix, env, v))
 		}
-		return false, fmt.Errorf("--%s=%q is not a boolean", name, v)
+		return false, usage(fmt.Errorf("--%s=%q is not a boolean", name, v))
 	}
 	return b, nil
 }
@@ -62,9 +88,9 @@ func intFlag(cmd *cobra.Command, name, env string) (int, error) {
 	n, err := strconv.Atoi(v)
 	if err != nil {
 		if fromEnv {
-			return 0, fmt.Errorf("%s%s=%q is not an integer", envPrefix, env, v)
+			return 0, usage(fmt.Errorf("%s%s=%q is not an integer", envPrefix, env, v))
 		}
-		return 0, fmt.Errorf("--%s=%q is not an integer", name, v)
+		return 0, usage(fmt.Errorf("--%s=%q is not an integer", name, v))
 	}
 	return n, nil
 }
@@ -94,6 +120,8 @@ func NewRootCmd(version, commit, date string) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+
+	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usage(err) })
 
 	// Persistent flags available to all subcommands. Each has a matching
 	// AIRGAPPER_* environment variable; see rawFlag for the precedence rules.
