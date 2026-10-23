@@ -352,6 +352,7 @@ git:
 
 ```
 airgapper sync            Synchronize artifacts from source to destination
+airgapper validate        Check configuration and credentials without syncing
 airgapper helm images     Extract container image references from Helm charts
 airgapper version         Print version, commit, and build date
 ```
@@ -367,6 +368,34 @@ airgapper version         Print version, commit, and build date
 | `--log-format`   |        | `AIRGAPPER_LOG_FORMAT`   | `json`   | Log format: `json` or `text`              |
 | `--dry-run-log`  |        | `AIRGAPPER_DRY_RUN_LOG`  | (auto)   | Path for the dry-run log file             |
 | `--timeout`      |        | `AIRGAPPER_TIMEOUT`      | `0`      | Overall run timeout in seconds (0 = off)  |
+| `--retry-attempts` |      | `AIRGAPPER_RETRY_ATTEMPTS` | `3`    | Tries per network operation, including the first (1 = no retry) |
+| `--retry-delay`  |        | `AIRGAPPER_RETRY_DELAY`  | `2`      | Seconds before the first retry, doubled for each further retry (with jitter, max 30 s) |
+
+### Retries
+
+Network operations that fail with a transient error are retried with exponential backoff and jitter: HTTP 408, 429 and 5xx responses, timeouts, reset or refused connections, and truncated responses.
+Credential errors (401/403), missing artifacts (404) and a cancelled run are never retried, and `--timeout` still bounds the whole run, including the waits between tries.
+A retry that is logged shows the operation, the attempt and the delay.
+
+### `validate` and `--output json`
+
+`airgapper validate` checks the configuration and credentials without contacting any registry or host. It reports every problem in one run:
+
+- unknown or misspelled keys, missing required fields, invalid push modes and unknown `scanner_ref` names
+- options that do not apply to the resource type (for example `policy_path` on a Helm or Git resource)
+- credential references (`source_credentials_ref`, `target_credentials_ref`) that do not exist for the resource type, or are used without `--credentials`
+- files that do not exist: `policy_path`, the `ca.crt` in `*_ca_cert` directories, and the `ssh_key_path` of referenced credentials
+
+It exits `0` when everything is fine and `2` otherwise.
+
+`sync` and `validate` accept `--output json` (`AIRGAPPER_OUTPUT`, default `text`). With it, stdout carries exactly one JSON document and logs stay on stderr, so a pipeline can read the result without parsing text:
+
+```shell
+airgapper validate --config ./configs/ --credentials ./creds/ --output json
+airgapper sync --config ./configs/ --dry-run --output json | jq '.summary'
+```
+
+`helm images` has its own `--output` flag (the path of the file to write) and is not affected.
 
 ### `helm images` Flags
 
@@ -392,7 +421,7 @@ airgapper helm images \
 | ----- | ----------------------------------------- |
 | `0`   | All resources synced successfully         |
 | `1`   | Sync completed with one or more failures  |
-| `2`   | Usage or configuration error              |
+| `2`   | Usage or configuration error (also `validate` finding problems) |
 
 ### Examples
 

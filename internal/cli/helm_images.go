@@ -90,7 +90,11 @@ func runHelmImages(cmd *cobra.Command, _ []string) error {
 	}
 	defer cancel()
 
-	extractor := helmimages.New(logger)
+	policy, err := retryPolicy(cmd)
+	if err != nil {
+		return err
+	}
+	extractor := helmimages.New(logger).WithRetry(policy)
 	entries, skipped, err := extractor.Extract(ctx, helmResources, credStore)
 	if err != nil {
 		return fmt.Errorf("extract images: %w", err)

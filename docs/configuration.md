@@ -9,6 +9,8 @@ Configuration files must match one of these patterns:
 - `*.config.airgapper.yaml`
 - `*.config.airgapper.yml`
 
+Options that do not apply to a resource type are errors too, for example `policy_path` on a Helm or Git resource, `destination_chart` on an image resource, or `source_insecure` and the `*_ca_cert` options on a Git resource. Run `airgapper validate` to check a configuration, together with its credential references and the files it points to, without syncing.
+
 Keys are checked strictly: an unknown or misspelled key (for example `policy_pth`) is an error, not silently ignored. The same applies to credential files.
 
 When `--config` points to a **folder**, all matching files in that folder are discovered and merged.
