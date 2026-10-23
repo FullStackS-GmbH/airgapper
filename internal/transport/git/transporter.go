@@ -19,6 +19,7 @@ import (
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 	airtransport "github.com/fullstacks-gmbh/airgapper/internal/transport"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport/registry"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/retry"
 )
 
 // azureReposAuthSentinel is a magic username signalling the Azure Repos HTTPS
@@ -31,6 +32,13 @@ const azureReposAuthSentinel = "AzureReposAuthnSucks"
 // authentication patterns.
 type Transporter struct {
 	logger *slog.Logger
+	retry  retry.Policy
+}
+
+// WithRetry sets the retry policy for network calls and returns t.
+func (t *Transporter) WithRetry(p retry.Policy) *Transporter {
+	t.retry = p
+	return t
 }
 
 // New creates a new Git Transporter with the given logger.
@@ -216,13 +224,19 @@ func (t *Transporter) syncRef(ctx context.Context, run *syncRun, resource domain
 	// Fetch only the target ref into the shared working repository.
 	logger.Info("fetching ref from source repository")
 	refSpec := config.RefSpec(fmt.Sprintf("+%s:%s", fullRef, fullRef))
-	fetchErr := repo.FetchContext(ctx, &gogit.FetchOptions{
-		RemoteName: "origin",
-		RefSpecs:   []config.RefSpec{refSpec},
-		Auth:       srcAuth,
-		Tags:       gogit.NoTags,
+	fetchErr := t.retry.Do(ctx, logger, "fetch ref", func() error {
+		err := repo.FetchContext(ctx, &gogit.FetchOptions{
+			RemoteName: "origin",
+			RefSpecs:   []config.RefSpec{refSpec},
+			Auth:       srcAuth,
+			Tags:       gogit.NoTags,
+		})
+		if errors.Is(err, gogit.NoErrAlreadyUpToDate) {
+			return nil
+		}
+		return err
 	})
-	if fetchErr != nil && !errors.Is(fetchErr, gogit.NoErrAlreadyUpToDate) {
+	if fetchErr != nil {
 		logger.Error("failed to fetch from source", "error", fetchErr)
 		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("fetch source: %w", fetchErr)},
 			[]domain.OperationRecord{op(domain.OpFail, "fetch source: "+fetchErr.Error())}
@@ -238,7 +252,14 @@ func (t *Transporter) syncRef(ctx context.Context, run *syncRun, resource domain
 	}
 
 	// An unchanged ref is not a failure: the destination already holds it.
-	if err := repo.PushContext(ctx, pushOpts); err != nil && !errors.Is(err, gogit.NoErrAlreadyUpToDate) {
+	pushErr := t.retry.Do(ctx, logger, "push ref", func() error {
+		err := repo.PushContext(ctx, pushOpts)
+		if errors.Is(err, gogit.NoErrAlreadyUpToDate) {
+			return nil
+		}
+		return err
+	})
+	if err := pushErr; err != nil {
 		logger.Error("failed to push to destination", "error", err)
 		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push to destination: %w", err)},
 			[]domain.OperationRecord{op(domain.OpPull, "fetched from source"), op(domain.OpFail, "push to destination: "+err.Error())}
@@ -267,7 +288,11 @@ func (t *Transporter) listRefs(ctx context.Context, endpoint domain.Endpoint, cr
 		URLs: []string{endpoint.Repository},
 	})
 
-	refs, err := rem.ListContext(ctx, &gogit.ListOptions{Auth: auth})
+	var refs []*plumbing.Reference
+	err = t.retry.Do(ctx, t.logger, "list refs", func() (err error) {
+		refs, err = rem.ListContext(ctx, &gogit.ListOptions{Auth: auth})
+		return err
+	})
 	if errors.Is(err, transport.ErrEmptyRemoteRepository) {
 		return nil, nil
 	}

@@ -6,16 +6,20 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	helmloader "helm.sh/helm/v4/pkg/chart/v2/loader"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/retry"
 )
 
 func TestLegacyListVersionsAndExists(t *testing.T) {
@@ -211,4 +215,43 @@ type testDiscardWriter struct{}
 
 func (testDiscardWriter) Write(p []byte) (int, error) {
 	return len(p), nil
+}
+
+func TestFetchLegacyIndexRetriesTransientFailures(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		failWith  int
+		wantCalls int32
+		wantErr   bool
+	}{
+		{name: "503 then success", failWith: http.StatusServiceUnavailable, wantCalls: 3},
+		{name: "404 is terminal", failWith: http.StatusNotFound, wantCalls: 1, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if n := calls.Add(1); n < 3 {
+					w.WriteHeader(tc.failWith)
+					return
+				}
+				_, _ = io.WriteString(w, "entries:\n  app:\n  - version: 1.0.0\n    urls: [app-1.0.0.tgz]\n")
+			}))
+			defer srv.Close()
+
+			tr := New(slog.New(slog.NewTextHandler(io.Discard, nil))).WithRetry(retry.Policy{Attempts: 3, BaseDelay: time.Millisecond})
+			entries, err := tr.legacyChartVersions(context.Background(), domain.Endpoint{Registry: srv.URL, Repository: "app"}, nil)
+
+			assert.Equal(t, tc.wantCalls, calls.Load())
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Len(t, entries, 1)
+		})
+	}
 }

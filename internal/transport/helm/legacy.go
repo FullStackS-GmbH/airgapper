@@ -46,6 +46,18 @@ var insecureLegacyHTTPClient = &http.Client{
 	Transport: newLegacyTransport(&tls.Config{InsecureSkipVerify: true}), //nolint:gosec // explicit opt-in via endpoint.Insecure
 }
 
+// httpStatusError is a non-2xx response that has no more specific error. It
+// carries the status so callers can tell a retryable 503 from a 400.
+type httpStatusError struct {
+	code   int
+	status string
+}
+
+func (e *httpStatusError) Error() string { return "unexpected HTTP status " + e.status }
+
+// HTTPStatus returns the HTTP status code of the response.
+func (e *httpStatusError) HTTPStatus() int { return e.code }
+
 type legacyIndex struct {
 	Entries map[string][]legacyChartVersion `yaml:"entries"`
 }
@@ -115,7 +127,11 @@ func (t *Transporter) pullLegacyChart(ctx context.Context, endpoint domain.Endpo
 	if !sameHost(legacyRepoBaseURL(endpoint.Registry), chartURL) {
 		chartCreds = nil
 	}
-	data, err := httpGet(ctx, chartURL, chartCreds, maxChartArchiveSize, endpoint.Insecure, endpoint.CACertPath)
+	var data []byte
+	err = t.retry.Do(ctx, t.logger, "download chart", func() (err error) {
+		data, err = httpGet(ctx, chartURL, chartCreds, maxChartArchiveSize, endpoint.Insecure, endpoint.CACertPath)
+		return err
+	})
 	if err != nil {
 		return nil, "", fmt.Errorf("download chart %q: %w", chartURL, err)
 	}
@@ -124,7 +140,11 @@ func (t *Transporter) pullLegacyChart(ctx context.Context, endpoint domain.Endpo
 }
 
 func (t *Transporter) legacyChartVersions(ctx context.Context, endpoint domain.Endpoint, creds *domain.Credential) ([]legacyChartVersion, error) {
-	idx, err := fetchLegacyIndex(ctx, endpoint.Registry, creds, endpoint.Insecure, endpoint.CACertPath)
+	var idx *legacyIndex
+	err := t.retry.Do(ctx, t.logger, "fetch chart index", func() (err error) {
+		idx, err = fetchLegacyIndex(ctx, endpoint.Registry, creds, endpoint.Insecure, endpoint.CACertPath)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +248,7 @@ func httpGet(ctx context.Context, rawURL string, creds *domain.Credential, limit
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, fmt.Errorf("%s: %w", resp.Status, domain.ErrNotFound)
 	case resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices:
-		return nil, fmt.Errorf("unexpected HTTP status %s", resp.Status)
+		return nil, &httpStatusError{code: resp.StatusCode, status: resp.Status}
 	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))

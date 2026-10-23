@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/retry"
 )
 
 // envPrefix is prepended to the name of every environment variable the CLI
@@ -110,6 +112,35 @@ func withRunTimeout(cmd *cobra.Command) (context.Context, context.CancelFunc, er
 	return cmd.Context(), func() {}, nil
 }
 
+// retryPolicy reads --retry-attempts and --retry-delay (or their environment
+// variables) into a retry policy.
+func retryPolicy(cmd *cobra.Command) (retry.Policy, error) {
+	attempts, err := intFlag(cmd, "retry-attempts", "RETRY_ATTEMPTS")
+	if err != nil {
+		return retry.Policy{}, err
+	}
+	delay, err := intFlag(cmd, "retry-delay", "RETRY_DELAY")
+	if err != nil {
+		return retry.Policy{}, err
+	}
+	if attempts < 1 {
+		return retry.Policy{}, usage(errors.New("--retry-attempts must be at least 1"))
+	}
+	if delay < 0 {
+		return retry.Policy{}, usage(errors.New("--retry-delay must not be negative"))
+	}
+	return retry.Policy{Attempts: attempts, BaseDelay: time.Duration(delay) * time.Second}, nil
+}
+
+// outputFormat reads --output (or AIRGAPPER_OUTPUT): "text" or "json".
+func outputFormat(cmd *cobra.Command) (string, error) {
+	format := stringFlag(cmd, "output", "OUTPUT")
+	if format != "text" && format != "json" {
+		return "", usage(fmt.Errorf("--output must be text or json, got %q", format))
+	}
+	return format, nil
+}
+
 // NewRootCmd creates the root command with all subcommands registered. The
 // version, commit, and date parameters are typically injected via ldflags at
 // build time.
@@ -133,9 +164,12 @@ func NewRootCmd(version, commit, date string) *cobra.Command {
 	pflags.String("log-format", "json", "Log format: json or text (env: AIRGAPPER_LOG_FORMAT)")
 	pflags.String("dry-run-log", "", "Path for dry-run log file, default auto-generated (env: AIRGAPPER_DRY_RUN_LOG)")
 	pflags.Int("timeout", 0, "Overall run timeout in seconds, 0 = no timeout (env: AIRGAPPER_TIMEOUT)")
+	pflags.Int("retry-attempts", 3, "Tries per network operation including the first, 1 = no retry (env: AIRGAPPER_RETRY_ATTEMPTS)")
+	pflags.Int("retry-delay", 2, "Seconds to wait before the first retry, doubled for each further retry (env: AIRGAPPER_RETRY_DELAY)")
 
 	// Register subcommands.
 	cmd.AddCommand(newSyncCmd())
+	cmd.AddCommand(newValidateCmd())
 	cmd.AddCommand(newVersionCmd(version, commit, date))
 	cmd.AddCommand(newHelmCmd())
 

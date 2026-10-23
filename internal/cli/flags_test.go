@@ -156,3 +156,38 @@ func TestExitCode(t *testing.T) {
 	assert.Equal(t, 2, ExitCode(newCmd("sync")), "missing --config")
 	assert.Equal(t, 2, ExitCode(newCmd("sync", "--config", filepath.Join(t.TempDir(), "missing.yaml"))), "unreadable config")
 }
+
+func TestRetryPolicy(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		wantErr  bool
+		attempts int
+	}{
+		{name: "defaults", attempts: 3},
+		{name: "explicit", args: []string{"--retry-attempts", "5", "--retry-delay", "0"}, attempts: 5},
+		{name: "zero attempts", args: []string{"--retry-attempts", "0"}, wantErr: true},
+		{name: "negative delay", args: []string{"--retry-delay", "-1"}, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cmd := &cobra.Command{Use: "test", Run: func(*cobra.Command, []string) {}}
+			cmd.Flags().Int("retry-attempts", 3, "")
+			cmd.Flags().Int("retry-delay", 2, "")
+			cmd.SetArgs(tc.args)
+			require.NoError(t, cmd.Execute())
+
+			policy, err := retryPolicy(cmd)
+
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Equal(t, 2, ExitCode(err))
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.attempts, policy.Attempts)
+		})
+	}
+}

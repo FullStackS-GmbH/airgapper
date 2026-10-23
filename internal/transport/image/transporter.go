@@ -14,6 +14,7 @@ import (
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport/registry"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/retry"
 )
 
 // Transporter handles synchronization of container images between registries.
@@ -21,6 +22,13 @@ import (
 // library that powers Skopeo/Podman/Buildah — for registry operations.
 type Transporter struct {
 	logger *slog.Logger
+	retry  retry.Policy
+}
+
+// WithRetry sets the retry policy for registry calls and returns t.
+func (t *Transporter) WithRetry(p retry.Policy) *Transporter {
+	t.retry = p
+	return t
 }
 
 // New creates a new image Transporter with the given logger.
@@ -108,11 +116,13 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 	}
 
 	logger.Info("copying image")
-	err = copyImage(ctx, dstRef, srcRef, resource.PolicyPath, &copy.Options{
-		SourceCtx:          registry.SystemContext(srcCred, resource.Source.Insecure, resource.Source.CACertPath),
-		DestinationCtx:     registry.SystemContext(dstCred, resource.Destination.Insecure, resource.Destination.CACertPath),
-		ImageListSelection: copy.CopyAllImages,
-		ReportWriter:       io.Discard,
+	err = t.retry.Do(ctx, logger, "copy image", func() error {
+		return copyImage(ctx, dstRef, srcRef, resource.PolicyPath, &copy.Options{
+			SourceCtx:          registry.SystemContext(srcCred, resource.Source.Insecure, resource.Source.CACertPath),
+			DestinationCtx:     registry.SystemContext(dstCred, resource.Destination.Insecure, resource.Destination.CACertPath),
+			ImageListSelection: copy.CopyAllImages,
+			ReportWriter:       io.Discard,
+		})
 	})
 	if err != nil {
 		logger.Error("failed to copy image", "error", err)
@@ -160,7 +170,12 @@ func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, vers
 		return false, fmt.Errorf("parse reference %q: %w", refStr, err)
 	}
 
-	return registry.ManifestExists(ctx, registry.SystemContext(creds, endpoint.Insecure, endpoint.CACertPath), ref, t.logger)
+	var exists bool
+	err = t.retry.Do(ctx, t.logger, "check manifest", func() (err error) {
+		exists, err = registry.ManifestExists(ctx, registry.SystemContext(creds, endpoint.Insecure, endpoint.CACertPath), ref, t.logger)
+		return err
+	})
+	return exists, err
 }
 
 // ListVersions returns all tags available at the given endpoint.
@@ -172,7 +187,11 @@ func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint
 	}
 
 	sys := registry.SystemContext(creds, endpoint.Insecure, endpoint.CACertPath)
-	tags, err := docker.GetRepositoryTags(ctx, sys, ref)
+	var tags []string
+	err = t.retry.Do(ctx, t.logger, "list tags", func() (err error) {
+		tags, err = docker.GetRepositoryTags(ctx, sys, ref)
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list tags for %q: %w", repo, err)
 	}
