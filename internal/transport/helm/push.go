@@ -16,6 +16,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
+	orasretry "oras.land/oras-go/v2/registry/remote/retry"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
@@ -86,7 +87,12 @@ func pushChart(ctx context.Context, data []byte, destination domain.Endpoint, ve
 			}
 		}
 	}
-	authorizer := &auth.Client{Client: client, Cache: auth.NewCache()}
+	// Preserve the Helm client's default HTTP retries, including when a
+	// custom TLS transport is used. Copy the client rather than mutating a
+	// shared client used by other transfers.
+	retryingClient := *client
+	retryingClient.Transport = orasretry.NewTransport(client.Transport)
+	authorizer := &auth.Client{Client: &retryingClient, Cache: auth.NewCache()}
 	if credential != nil {
 		authorizer.Credential = auth.StaticCredential(repository.Reference.Registry, auth.Credential{
 			Username: credential.Username,

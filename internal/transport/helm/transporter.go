@@ -28,8 +28,8 @@ type Transporter struct {
 }
 
 // WithRetry sets the retry policy for registry and repository calls and
-// returns t. OCI pulls and pushes are retried by the Helm client's own
-// transport, so the policy covers lookups and legacy HTTP repositories.
+// returns t. OCI pulls and pushes use the default ORAS HTTP retry policy;
+// this policy covers lookups and legacy HTTP repositories.
 func (t *Transporter) WithRetry(p retry.Policy) *Transporter {
 	t.retry = p
 	return t
