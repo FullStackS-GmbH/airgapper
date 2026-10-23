@@ -78,7 +78,7 @@ func TestPushChartArtifactoryManifestCompatibility(t *testing.T) {
 				credential = &domain.Credential{Username: "svc-test", Password: "test-token"}
 			} else {
 				// Prove the existing Helm SDK reproduces the observed failure.
-				client, err := newRegistryClient(domain.Endpoint{}, destination)
+				client, err := newRegistryClient(context.Background(), domain.Endpoint{}, destination)
 				require.NoError(t, err)
 				_, err = client.Push(data, NormalizeOCIRef(destination.Registry, destination.Repository, "1.2.3"))
 				require.ErrorContains(t, err, "mismatch response Content-Type")

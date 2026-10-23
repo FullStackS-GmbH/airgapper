@@ -20,6 +20,6 @@ func main() {
 	cmd := cli.NewRootCmd(version, commit, date)
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		os.Exit(cli.ExitCode(err))
 	}
 }

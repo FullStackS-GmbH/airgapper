@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -50,16 +51,84 @@ func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts d
 		logger = t.logger
 	}
 
+	run := &syncRun{}
+	defer run.close()
+
 	result := airtransport.SyncVersions(resource.Versions, func(ref string) (domain.VersionResult, []domain.OperationRecord) {
-		return t.syncRef(ctx, resource, ref, opts, logger)
+		return t.syncRef(ctx, run, resource, ref, opts, logger)
 	})
 	result.Resource = resource
 
 	return result, nil
 }
 
+// syncRun holds state shared by the refs of one resource: the source ref list
+// and a single bare working repository, so the source is not cloned once per
+// ref. Objects fetched for one ref are reused by the next.
+type syncRun struct {
+	srcRefs   []*plumbing.Reference
+	srcListed bool
+	dir       string
+	repo      *gogit.Repository
+}
+
+// close removes the working repository, if one was created.
+func (r *syncRun) close() {
+	if r.dir != "" {
+		_ = os.RemoveAll(r.dir)
+	}
+}
+
+// workRepo returns the working repository, creating it on first use with the
+// source as remote "origin" and the destination as remote "target".
+func (r *syncRun) workRepo(resource domain.Resource) (*gogit.Repository, error) {
+	if r.repo != nil {
+		return r.repo, nil
+	}
+	dir, err := os.MkdirTemp("", "airgapper-git-*")
+	if err != nil {
+		return nil, fmt.Errorf("create temp dir: %w", err)
+	}
+	r.dir = dir
+	repo, err := gogit.PlainInit(dir, true)
+	if err != nil {
+		return nil, fmt.Errorf("init working repository: %w", err)
+	}
+	for name, url := range map[string]string{"origin": resource.Source.Repository, "target": resource.Destination.Repository} {
+		if _, err := repo.CreateRemote(&config.RemoteConfig{Name: name, URLs: []string{url}}); err != nil {
+			return nil, fmt.Errorf("add %s remote: %w", name, err)
+		}
+	}
+	r.repo = repo
+	return repo, nil
+}
+
+// resolveRef turns a configured ref into a full ref name. Names starting with
+// "refs/" are used as they are. A short name such as "main" or "v1.0" resolves
+// to the branch of that name, else the tag, as git does.
+func (r *syncRun) resolveRef(ctx context.Context, t *Transporter, endpoint domain.Endpoint, ref string, creds *domain.Credential) (string, error) {
+	if strings.HasPrefix(ref, "refs/") {
+		return ref, nil
+	}
+	if !r.srcListed {
+		refs, err := t.listRefs(ctx, endpoint, creds)
+		if err != nil {
+			return "", fmt.Errorf("list source refs: %w", err)
+		}
+		r.srcRefs, r.srcListed = refs, true
+	}
+	for _, prefix := range []string{"refs/heads/", "refs/tags/"} {
+		for _, candidate := range r.srcRefs {
+			if candidate.Name().String() == prefix+ref {
+				return candidate.Name().String(), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("ref %q not found at source: %w", ref, domain.ErrNotFound)
+}
+
 // syncRef handles the sync logic for a single git ref.
-func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref string, opts domain.SyncOptions, logger *slog.Logger) (domain.VersionResult, []domain.OperationRecord) {
+func (t *Transporter) syncRef(ctx context.Context, run *syncRun, resource domain.Resource, ref string, opts domain.SyncOptions, logger *slog.Logger) (domain.VersionResult, []domain.OperationRecord) {
 	logger = logger.With("ref", ref, "src", resource.Source.Repository, "dst", resource.Destination.Repository)
 
 	op := func(operation domain.OperationType, msg string) domain.OperationRecord {
@@ -86,17 +155,39 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 			[]domain.OperationRecord{op(domain.OpFail, "resolve target credentials: "+err.Error())}
 	}
 
-	// Check if the ref exists at the destination (for skip mode).
-	exists, err := t.Exists(ctx, resource.Destination, ref, dstCred)
-	if err != nil {
-		checkErr := fmt.Errorf("check destination: %w", err)
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: checkErr, Message: checkErr.Error()},
-			[]domain.OperationRecord{op(domain.OpFail, checkErr.Error())}
+	// checkDestination looks the ref up at the destination. A short name matches
+	// a branch or a tag; the exact full name is used once it is known.
+	checkDestination := func(name string) (bool, *domain.VersionResult, []domain.OperationRecord) {
+		exists, err := t.Exists(ctx, resource.Destination, name, dstCred)
+		if err != nil {
+			checkErr := fmt.Errorf("check destination: %w", err)
+			return false, &domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: checkErr, Message: checkErr.Error()},
+				[]domain.OperationRecord{op(domain.OpFail, checkErr.Error())}
+		}
+		return exists, nil, nil
 	}
 
-	// Dry-run mode: report what would happen without mutating.
+	// Dry-run mode: report what would happen without mutating. It needs only the
+	// destination, so the source is not contacted.
 	if opts.DryRun {
+		exists, failed, ops := checkDestination(ref)
+		if failed != nil {
+			return *failed, ops
+		}
 		return airtransport.DryRunResult(resource.PushMode, ref, exists, logger, op)
+	}
+
+	// Resolve short names ("main", "v1.0") to full ref names at the source.
+	fullRef, err := run.resolveRef(ctx, t, resource.Source, ref, srcCred)
+	if err != nil {
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: err, Message: err.Error()},
+			[]domain.OperationRecord{op(domain.OpFail, err.Error())}
+	}
+
+	// Check if the ref exists at the destination (for skip mode).
+	exists, failed, ops := checkDestination(fullRef)
+	if failed != nil {
+		return *failed, ops
 	}
 
 	if exists && resource.PushMode == domain.PushModeSkip {
@@ -105,73 +196,57 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 			[]domain.OperationRecord{op(domain.OpSkip, "already exists")}
 	}
 
-	// Clone source repo to a temporary directory, fetching only the target ref.
-	tmpDir, err := os.MkdirTemp("", "airgapper-git-*")
-	if err != nil {
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create temp dir: %w", err)},
-			[]domain.OperationRecord{op(domain.OpFail, "create temp dir: "+err.Error())}
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
 	srcAuth, err := credToTransportAuth(srcCred)
 	if err != nil {
 		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("build source auth: %w", err)},
 			[]domain.OperationRecord{op(domain.OpFail, "build source auth: "+err.Error())}
 	}
-
-	logger.Info("cloning source repository")
-	cloneOpts := &gogit.CloneOptions{
-		URL:           resource.Source.Repository,
-		Auth:          srcAuth,
-		ReferenceName: plumbing.ReferenceName(ref),
-		SingleBranch:  true,
-		Depth:         0,
-		Tags:          gogit.AllTags,
-	}
-
-	repo, err := gogit.PlainCloneContext(ctx, tmpDir, false, cloneOpts)
-	if err != nil {
-		logger.Error("failed to clone source", "error", err)
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("clone source: %w", err)},
-			[]domain.OperationRecord{op(domain.OpFail, "clone source: "+err.Error())}
-	}
-
-	// Add destination as remote "target".
 	dstAuth, err := credToTransportAuth(dstCred)
 	if err != nil {
 		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("build destination auth: %w", err)},
 			[]domain.OperationRecord{op(domain.OpFail, "build destination auth: "+err.Error())}
 	}
 
-	_, err = repo.CreateRemote(&config.RemoteConfig{
-		Name: "target",
-		URLs: []string{resource.Destination.Repository},
-	})
+	repo, err := run.workRepo(resource)
 	if err != nil {
-		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("add target remote: %w", err)},
-			[]domain.OperationRecord{op(domain.OpFail, "add target remote: "+err.Error())}
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: err},
+			[]domain.OperationRecord{op(domain.OpFail, err.Error())}
+	}
+
+	// Fetch only the target ref into the shared working repository.
+	logger.Info("fetching ref from source repository")
+	refSpec := config.RefSpec(fmt.Sprintf("+%s:%s", fullRef, fullRef))
+	fetchErr := repo.FetchContext(ctx, &gogit.FetchOptions{
+		RemoteName: "origin",
+		RefSpecs:   []config.RefSpec{refSpec},
+		Auth:       srcAuth,
+		Tags:       gogit.NoTags,
+	})
+	if fetchErr != nil && !errors.Is(fetchErr, gogit.NoErrAlreadyUpToDate) {
+		logger.Error("failed to fetch from source", "error", fetchErr)
+		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("fetch source: %w", fetchErr)},
+			[]domain.OperationRecord{op(domain.OpFail, "fetch source: "+fetchErr.Error())}
 	}
 
 	// Push the ref to the target remote.
 	logger.Info("pushing ref to destination")
-	refSpec := config.RefSpec(fmt.Sprintf("%s:%s", ref, ref))
 	pushOpts := &gogit.PushOptions{
 		RemoteName: "target",
-		RefSpecs:   []config.RefSpec{refSpec},
+		RefSpecs:   []config.RefSpec{config.RefSpec(fmt.Sprintf("%s:%s", fullRef, fullRef))},
 		Auth:       dstAuth,
 		Force:      resource.PushMode == domain.PushModeForce,
 	}
 
-	if err := repo.PushContext(ctx, pushOpts); err != nil {
+	// An unchanged ref is not a failure: the destination already holds it.
+	if err := repo.PushContext(ctx, pushOpts); err != nil && !errors.Is(err, gogit.NoErrAlreadyUpToDate) {
 		logger.Error("failed to push to destination", "error", err)
 		return domain.VersionResult{Version: ref, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push to destination: %w", err)},
-			[]domain.OperationRecord{op(domain.OpPull, "cloned from source"), op(domain.OpFail, "push to destination: "+err.Error())}
+			[]domain.OperationRecord{op(domain.OpPull, "fetched from source"), op(domain.OpFail, "push to destination: "+err.Error())}
 	}
 
 	logger.Info("ref synced successfully")
 
-	var ops []domain.OperationRecord
-	ops = append(ops, op(domain.OpPull, "cloned from source"))
+	ops = []domain.OperationRecord{op(domain.OpPull, "fetched from source")}
 	if exists && resource.PushMode == domain.PushModeForce {
 		ops = append(ops, op(domain.OpOverwrite, "force pushed (overwritten)"))
 	} else {
@@ -180,12 +255,11 @@ func (t *Transporter) syncRef(ctx context.Context, resource domain.Resource, ref
 	return domain.VersionResult{Version: ref, Status: domain.SyncStatusSynced, Message: "pushed"}, ops
 }
 
-// Exists checks whether a specific ref exists at the given endpoint by listing
-// remote refs without cloning. It returns true if the ref is found.
-func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, version string, creds *domain.Credential) (bool, error) {
+// listRefs lists the refs of a remote without cloning it.
+func (t *Transporter) listRefs(ctx context.Context, endpoint domain.Endpoint, creds *domain.Credential) ([]*plumbing.Reference, error) {
 	auth, err := credToTransportAuth(creds)
 	if err != nil {
-		return false, fmt.Errorf("build auth: %w", err)
+		return nil, fmt.Errorf("build auth: %w", err)
 	}
 
 	rem := gogit.NewRemote(memory.NewStorage(), &config.RemoteConfig{
@@ -195,10 +269,20 @@ func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, vers
 
 	refs, err := rem.ListContext(ctx, &gogit.ListOptions{Auth: auth})
 	if errors.Is(err, transport.ErrEmptyRemoteRepository) {
-		return false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("list remote refs: %w", err)
+		return nil, fmt.Errorf("list remote refs: %w", err)
+	}
+	return refs, nil
+}
+
+// Exists checks whether a specific ref exists at the given endpoint by listing
+// remote refs without cloning. It returns true if the ref is found.
+func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, version string, creds *domain.Credential) (bool, error) {
+	refs, err := t.listRefs(ctx, endpoint, creds)
+	if err != nil {
+		return false, err
 	}
 
 	for _, ref := range refs {
@@ -210,27 +294,27 @@ func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, vers
 	return false, nil
 }
 
-// ListVersions returns all refs available at the given endpoint. The returned
-// list contains the full ref names (e.g. "refs/heads/main", "refs/tags/v1.0").
-func (t *Transporter) ListVersions(_ context.Context, endpoint domain.Endpoint, creds *domain.Credential) ([]string, error) {
-	auth, err := credToTransportAuth(creds)
+// ListVersions returns the branches and tags available at the given endpoint
+// by short name (e.g. "main", "v1.0"), the form used in the configuration. A
+// branch and a tag with the same name are listed once; Sync resolves such a
+// name to the branch.
+func (t *Transporter) ListVersions(ctx context.Context, endpoint domain.Endpoint, creds *domain.Credential) ([]string, error) {
+	refs, err := t.listRefs(ctx, endpoint, creds)
 	if err != nil {
-		return nil, fmt.Errorf("build auth: %w", err)
+		return nil, err
 	}
 
-	rem := gogit.NewRemote(memory.NewStorage(), &config.RemoteConfig{
-		Name: "probe",
-		URLs: []string{endpoint.Repository},
-	})
-
-	refs, err := rem.List(&gogit.ListOptions{Auth: auth})
-	if err != nil {
-		return nil, fmt.Errorf("list remote refs: %w", err)
-	}
-
+	seen := make(map[string]bool, len(refs))
 	names := make([]string, 0, len(refs))
 	for _, ref := range refs {
-		names = append(names, ref.Name().String())
+		name := ref.Name()
+		if !name.IsBranch() && !name.IsTag() || strings.HasSuffix(name.String(), "^{}") {
+			continue
+		}
+		if short := name.Short(); !seen[short] {
+			seen[short] = true
+			names = append(names, short)
+		}
 	}
 
 	return names, nil

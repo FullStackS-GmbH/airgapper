@@ -1,7 +1,10 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,8 +15,7 @@ import (
 )
 
 // configFilePatterns lists the glob patterns used to discover airgapper
-// configuration files within a directory. The preferred pattern is
-// *.config.airgapper.yaml; legacy patterns are kept for backward compatibility.
+// configuration files within a directory.
 var configFilePatterns = []string{
 	"*.config.airgapper.yaml",
 	"*.config.airgapper.yml",
@@ -86,6 +88,18 @@ func discoverFiles(dir string, patterns []string) ([]string, error) {
 	return found, nil
 }
 
+// decodeStrict unmarshals YAML and rejects unknown keys. A misspelled key such
+// as "policy_pth" would otherwise be dropped silently and leave a security
+// setting off. An empty document is valid and leaves out untouched.
+func decodeStrict(data []byte, out any) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(out); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
+}
+
 // loadSingleFile reads and unmarshals a single YAML config file.
 func loadSingleFile(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -94,7 +108,7 @@ func loadSingleFile(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := decodeStrict(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing YAML: %w", err)
 	}
 
@@ -178,7 +192,7 @@ func loadSingleCredentialFile(path string) ([]domain.Credential, error) {
 	}
 
 	var cf credentialFile
-	if err := yaml.Unmarshal(data, &cf); err != nil {
+	if err := decodeStrict(data, &cf); err != nil {
 		return nil, fmt.Errorf("parsing credentials YAML %q: %w", path, err)
 	}
 

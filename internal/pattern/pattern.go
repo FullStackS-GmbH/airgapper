@@ -29,12 +29,13 @@ func IsPattern(s string) bool {
 }
 
 // Match filters the given candidates against a regex pattern. The pattern is
-// anchored with ^ and $ for full-match semantics. It returns only the
+// anchored with ^ and $ around a non-capturing group, so alternations such as
+// "a|b" are matched as a whole. It returns only the
 // candidates that fully match the compiled pattern.
 //
 // An error is returned if the pattern is not a valid regular expression.
 func Match(pattern string, candidates []string) ([]string, error) {
-	anchored := fmt.Sprintf("^%s$", pattern)
+	anchored := fmt.Sprintf("^(?:%s)$", pattern)
 	re, err := regexp.Compile(anchored)
 	if err != nil {
 		return nil, fmt.Errorf("compile pattern %q: %w", pattern, err)

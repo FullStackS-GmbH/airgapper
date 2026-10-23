@@ -79,14 +79,18 @@ func (cs *CommandScanner) Name() string {
 // exits with an unexpected code, Scan returns a ScanResult with Passed=false
 // and a nil error.
 func (cs *CommandScanner) Scan(ctx context.Context, artifact domain.ArtifactRef) (*domain.ScanResult, error) {
-	// Substitute placeholders in the command template.
-	expanded := cs.substituteCommand(artifact)
-
-	// Split the command into arguments, honoring quotes so a configured
+	// Split the template into arguments first, honoring quotes so a configured
 	// command like `trivy image "{source}"` survives spaces in a quoted arg.
-	args := splitArgs(expanded)
+	// Placeholders are substituted afterwards, inside each argument: values such
+	// as a chart version from a remote index.yaml are untrusted, and quotes or
+	// spaces in them must not be able to add arguments.
+	args := splitArgs(cs.command)
 	if len(args) == 0 {
-		return nil, fmt.Errorf("scanner %q: empty command after expansion", cs.name)
+		return nil, fmt.Errorf("scanner %q: empty command", cs.name)
+	}
+	replacer := cs.replacer(artifact)
+	for i, a := range args {
+		args[i] = replacer.Replace(a)
 	}
 
 	// Create a timeout-bounded context for the command execution.
@@ -96,9 +100,9 @@ func (cs *CommandScanner) Scan(ctx context.Context, artifact domain.ArtifactRef)
 	// Build and execute the command.
 	cmd := exec.CommandContext(cmdCtx, args[0], args[1:]...)
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout, stderr := &cappedBuffer{max: maxCapturedOutput}, &cappedBuffer{max: maxCapturedOutput}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	err := cmd.Run()
 
@@ -125,17 +129,38 @@ func (cs *CommandScanner) Scan(ctx context.Context, artifact domain.ArtifactRef)
 	return result, nil
 }
 
-// substituteCommand replaces placeholders in the command template with values
-// from the artifact reference.
-func (cs *CommandScanner) substituteCommand(artifact domain.ArtifactRef) string {
-	r := strings.NewReplacer(
+// maxCapturedOutput caps how much of each output stream is kept in memory.
+const maxCapturedOutput = 64 << 10
+
+// cappedBuffer keeps the first max bytes written and discards the rest, so a
+// chatty scanner cannot grow memory without bound. Write always reports the
+// full length so the command is never blocked or failed by the cap.
+//
+// The buffer is a named field, not embedded: embedding would promote
+// bytes.Buffer.ReadFrom, which io.Copy prefers over Write and so skips the cap.
+type cappedBuffer struct {
+	buf bytes.Buffer
+	max int
+}
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	if room := b.max - b.buf.Len(); room > 0 {
+		b.buf.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil
+}
+
+func (b *cappedBuffer) String() string { return b.buf.String() }
+
+// replacer maps placeholders to values from the artifact reference.
+func (cs *CommandScanner) replacer(artifact domain.ArtifactRef) *strings.Replacer {
+	return strings.NewReplacer(
 		"{registry}", artifact.Registry,
 		"{repository}", artifact.Repository,
 		"{tag}", artifact.Version,
 		"{source}", artifact.FullRef(),
 		"{type}", artifact.Type.String(),
 	)
-	return r.Replace(cs.command)
 }
 
 // splitArgs splits a command string into arguments, honoring single and double

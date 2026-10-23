@@ -121,3 +121,24 @@ func TestNewFromConfig(t *testing.T) {
 	assert.Equal(t, "trivy", scanners["trivy"].Name())
 	assert.Equal(t, "grype", scanners["grype"].Name())
 }
+
+func TestCommandScanner_UntrustedValueCannotAddArguments(t *testing.T) {
+	t.Parallel()
+
+	s := scanner.New("printf", `printf [%s] "{tag}"`, 0, 10*time.Second)
+
+	result, err := s.Scan(context.Background(), domain.ArtifactRef{Version: `1.0" --injected "x`})
+	require.NoError(t, err)
+	assert.Equal(t, `[1.0" --injected "x]`, result.Output, "the value must stay one argument")
+}
+
+func TestCommandScanner_OutputIsCapped(t *testing.T) {
+	t.Parallel()
+
+	s := scanner.New("big", `sh -c "head -c 200000 /dev/zero | tr '\\0' x"`, 0, 10*time.Second)
+
+	result, err := s.Scan(context.Background(), domain.ArtifactRef{})
+	require.NoError(t, err)
+	assert.True(t, result.Passed)
+	assert.LessOrEqual(t, len(result.Output), 64<<10)
+}
