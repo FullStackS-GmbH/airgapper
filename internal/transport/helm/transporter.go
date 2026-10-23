@@ -28,8 +28,8 @@ type Transporter struct {
 }
 
 // WithRetry sets the retry policy for registry and repository calls and
-// returns t. OCI pulls and pushes are retried by the Helm client's own
-// transport, so the policy covers lookups and legacy HTTP repositories.
+// returns t. OCI pulls and pushes use the default ORAS HTTP retry policy;
+// this policy covers lookups and legacy HTTP repositories.
 func (t *Transporter) WithRetry(p retry.Policy) *Transporter {
 	t.retry = p
 	return t
@@ -194,23 +194,10 @@ func (t *Transporter) syncVersion(ctx context.Context, resource *domain.Resource
 		}
 	}
 
-	destinationClient, err := newRegistryClient(ctx, domain.Endpoint{}, resource.Destination)
-	if err != nil {
-		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("create destination registry client: %w", err)},
-			[]domain.OperationRecord{op(domain.OpFail, "create destination registry client: "+err.Error())}
-	}
-	if dstCred != nil {
-		dstHost := extractHost(resource.Destination.Registry)
-		if loginErr := destinationClient.Login(dstHost, registry.LoginOptBasicAuth(dstCred.Username, dstCred.Password)); loginErr != nil {
-			return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("login to destination %q: %w", dstHost, loginErr)},
-				[]domain.OperationRecord{op(domain.OpFail, "login to destination: "+loginErr.Error())}
-		}
-	}
-
-	// Push chart to destination. Helm v4 strict mode expects the push target to
-	// end in "/{chart-name}:{chart-version}", which dstRef already does.
+	// Include the OCI media type in the manifest body and push the final tag
+	// directly, avoiding Helm's digest-upload/GET/tag compatibility failure.
 	logger.Info("pushing chart to destination")
-	_, err = destinationClient.Push(chartData, dstRef)
+	err = pushChart(ctx, chartData, destination, version, dstCred)
 	if err != nil {
 		logger.Error("failed to push chart", "error", err)
 		return domain.VersionResult{Version: version, Status: domain.SyncStatusFailed, Error: fmt.Errorf("push chart: %w", err)},
