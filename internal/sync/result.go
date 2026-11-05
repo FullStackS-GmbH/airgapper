@@ -143,7 +143,7 @@ func FormatSummary(s Summary) string {
 
 	if len(s.ByType) > 0 {
 		b.WriteString("\nBy type:\n")
-		for _, rt := range []domain.ResourceType{domain.ResourceTypeImage, domain.ResourceTypeHelm, domain.ResourceTypeGit} {
+		for _, rt := range []domain.ResourceType{domain.ResourceTypeImage, domain.ResourceTypeHelm, domain.ResourceTypeGit, domain.ResourceTypeFile} {
 			ts, ok := s.ByType[rt]
 			if !ok {
 				continue

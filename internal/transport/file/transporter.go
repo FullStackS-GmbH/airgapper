@@ -54,6 +54,16 @@ type statusError int
 func (s statusError) Error() string   { return fmt.Sprintf("HTTP status %d", s) }
 func (s statusError) HTTPStatus() int { return int(s) }
 
+// requestError hides transport error text, which can embed signed redirect URLs
+// even inside nested url.Errors. Unwrap preserves timeout, cancellation and
+// connection-error classification for retries without rendering the unsafe text.
+type requestError struct {
+	cause error
+}
+
+func (e *requestError) Error() string { return "file HTTP request failed" }
+func (e *requestError) Unwrap() error { return e.cause }
+
 func clientFor(endpoint domain.Endpoint) (*http.Client, *http.Transport, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	// Preserve artifact bytes even when the source labels them Content-Encoding: gzip.
@@ -112,13 +122,7 @@ func request(ctx context.Context, client *http.Client, method, rawURL string, bo
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		// A redirected download URL can contain signed query parameters. Keep URLs
-		// and response bodies out of errors, including retry logs.
-		var urlErr *url.Error
-		if errors.As(err, &urlErr) {
-			return nil, fmt.Errorf("file HTTP request: %w", urlErr.Err)
-		}
-		return nil, errors.New("file HTTP request failed")
+		return nil, &requestError{cause: err}
 	}
 	return resp, nil
 }
