@@ -1,0 +1,33 @@
+name: "[cleanup] Closed PR images"
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  cleanup:
+    name: Delete closed PR images from GHCR
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+      packages: write
+    # Share the lock with PR publishing, so cleanup waits for an active push.
+    concurrency:
+      group: pr-images-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      # pull_request_target runs trusted base-branch code, never the PR head.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Delete this PR's image versions and unshared manifests
+        run: python3 scripts/cleanup_pr_images.py
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
