@@ -12,6 +12,7 @@ import (
 	"github.com/fullstacks-gmbh/airgapper/internal/logging"
 	"github.com/fullstacks-gmbh/airgapper/internal/scanner"
 	"github.com/fullstacks-gmbh/airgapper/internal/sync"
+	"github.com/fullstacks-gmbh/airgapper/internal/transport/file"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport/git"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport/helm"
 	"github.com/fullstacks-gmbh/airgapper/internal/transport/image"
@@ -92,6 +93,7 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		image.New(logger).WithRetry(policy),
 		helm.New(logger).WithRetry(policy),
 		git.New(logger).WithRetry(policy),
+		file.New(logger).WithRetry(policy),
 	}
 	engine := sync.NewEngine(transporters, scanner.NewFromConfig(cfg.Scanners), logger)
 

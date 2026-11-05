@@ -268,3 +268,40 @@ func TestFormatSummary(t *testing.T) {
 	assert.Contains(t, got, "helm: 3 versions")
 	assert.Contains(t, got, "git: 2 versions")
 }
+
+func TestFormatSummaryIncludesFiles(t *testing.T) {
+	t.Parallel()
+	file := domain.SyncResult{
+		Resource: domain.Resource{Type: domain.ResourceTypeFile},
+		Synced:   []domain.VersionResult{{Status: domain.SyncStatusSynced}},
+	}
+	for _, tc := range []struct {
+		name    string
+		results []domain.SyncResult
+		want    string
+	}{
+		{name: "file only", results: []domain.SyncResult{file}, want: "Resources: 1 | Versions: 1 | Synced: 1"},
+		{
+			name: "mixed types",
+			results: []domain.SyncResult{
+				{Resource: domain.Resource{Type: domain.ResourceTypeImage}, Synced: []domain.VersionResult{{Status: domain.SyncStatusSynced}}},
+				{Resource: domain.Resource{Type: domain.ResourceTypeHelm}, Skipped: []domain.VersionResult{{Status: domain.SyncStatusSkipped}}},
+				{Resource: domain.Resource{Type: domain.ResourceTypeGit}, Failed: []domain.VersionResult{{Status: domain.SyncStatusFailed}}},
+				file,
+			},
+			want: "Resources: 4 | Versions: 4 | Synced: 2 | Skipped: 1 | Failed: 1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			output := syncpkg.FormatSummary(syncpkg.Summarize(tc.results))
+			assert.Contains(t, output, tc.want)
+			assert.Contains(t, output, "  file: 1 versions (1 synced, 0 skipped, 0 failed)\n")
+			if len(tc.results) > 1 {
+				assert.Contains(t, output, "  image: 1 versions (1 synced, 0 skipped, 0 failed)\n")
+				assert.Contains(t, output, "  helm: 1 versions (0 synced, 1 skipped, 0 failed)\n")
+				assert.Contains(t, output, "  git: 1 versions (0 synced, 0 skipped, 1 failed)\n")
+			}
+		})
+	}
+}

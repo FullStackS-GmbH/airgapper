@@ -147,3 +147,63 @@ git:
 ```
 
 Go to **Settings > Secrets and variables > Actions > New repository secret**, name it `UNIVERSAL_AIRGAPPER_CREDS`, and paste the YAML content.
+
+## Pull request container images
+
+The repository's `ci.yml` publishes a multi-architecture preview image to
+`ghcr.io/fullstacks-gmbh/airgapper` after lint, tests, and the binary build pass
+for a pull request targeting `main`. Publishing runs for branches in this
+repository; fork and Dependabot PRs keep the existing checks but skip publishing.
+The job uses `GITHUB_TOKEN` with job-scoped `packages: write` permission.
+
+Each build checks out the PR head commit and publishes three tags:
+
+- `pr-<number>` follows the latest successful build of that PR.
+- `pr-<number>-<full-head-commit-sha>` identifies the build's source commit.
+- `pr-<number>-<full-head-commit-sha>-run-<run-id>-<attempt>` retains the identity
+  of each workflow attempt, so reruns remain attributable for cleanup.
+
+For example, use `ghcr.io/fullstacks-gmbh/airgapper:pr-123` as `AIRGAPPER_IMAGE`
+in a downstream GitLab pipeline, or set `image_tag: pr-123` when using the
+reusable GitHub workflow. Images support `linux/amd64` and `linux/arm64`.
+Preview images are unsigned; signing remains part of the release workflow.
+PR publishing does not change version tags or `latest`.
+
+
+### Automatic cleanup when a PR closes
+
+`cleanup-pr-images.yml` handles closed PRs targeting `main`, including merged
+PRs. It runs `scripts/cleanup_pr_images.py` from the trusted base commit using
+`pull_request_target`; it never executes the PR head or downloads PR artifacts.
+The workflow must be present on `main` to become active.
+
+Cleanup enumerates every package-version page, selects this PR's exact preview
+tags (including commit and run tags), inspects the OCI/Docker manifest graph,
+and deletes the matching versions plus their exclusively owned, untagged platform
+and attestation manifests. It preserves versions with release/other-PR tags and
+manifests referenced by any retained version. Unrelated untagged images are left
+alone. If reference inspection fails, no deletions begin. Tags are rechecked
+before each deletion to preserve versions promoted after the initial listing.
+GHCR handles garbage collection of container layers.
+
+Publishing and cleanup share a per-PR concurrency lock. A publisher queued after
+cleanup rechecks the PR state and skips pushing once the PR has closed. Cleanup
+also rechecks PR state, so reopening a PR before cleanup starts prevents deletion.
+Reopening a PR triggers the normal CI workflow and can publish a fresh preview.
+
+The job uses `GITHUB_TOKEN` with `packages: write`, plus read access to repository
+contents and PRs. The repository needs admin access to its GHCR package (normally
+granted when publishing through `GITHUB_TOKEN`). No PAT is required. GitHub may
+refuse deletion of public versions with over 5,000 downloads; API failures fail
+the workflow. See [GitHub's package deletion documentation](https://docs.github.com/en/packages/learn-github-packages/deleting-and-restoring-a-package).
+
+PR tags are temporary. Switch downstream pipelines to a release image before
+closing their PR; a pipeline still referencing `pr-48` cannot pull it after cleanup.
+Cleanup affects GHCR only, not copies already mirrored to Harbor or Artifactory,
+Actions caches, or workflow artifacts.
+
+Run the cleanup regression tests without contacting GitHub or GHCR:
+
+```sh
+python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
+```

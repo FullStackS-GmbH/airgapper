@@ -15,7 +15,7 @@ Credentials are optional, if omitted, anonymous access is used for all operation
 
 ## File Format
 
-Credentials are organized by type: `image`, `helm`, and `git`.
+Credentials are organized by type: `image`, `helm`, `git`, and `file`.
 
 ```yaml
 image:
@@ -228,3 +228,18 @@ All files are loaded and their credential lists are merged.
 - **Use short-lived tokens** where possible (e.g., CI/CD pipeline tokens).
 - **The tool never logs credential values**, even at DEBUG level.
   Only credential names and file paths appear in logs.
+
+## Generic file endpoints
+
+`file` resources (including the `generic` alias) resolve credentials exclusively
+from the `file` section. Use `source_credentials_ref` / `target_credentials_ref`
+or name an entry after the URL host (including a port if present). Username and
+password are sent as HTTP Basic authentication; an Artifactory access token goes
+in `password`. Do not put credentials in file URLs.
+
+```yaml
+file:
+  - name: artifactory
+    username: svc-airgapper
+    password: YOUR_ACCESS_TOKEN
+```

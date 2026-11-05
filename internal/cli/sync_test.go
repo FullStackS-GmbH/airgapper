@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -76,4 +79,36 @@ func TestSyncJSONOutput(t *testing.T) {
 	assert.Equal(t, 1, report.Summary.Skipped)
 	require.Len(t, report.Resources, 1)
 	assert.Equal(t, "skipped", report.Resources[0].Versions[0].Status)
+}
+
+func TestSyncGenericFileCLI(t *testing.T) {
+	t.Parallel()
+	puts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case "HEAD":
+			w.WriteHeader(404)
+		case "GET":
+			_, _ = io.WriteString(w, "test")
+		case "PUT":
+			puts++
+			user, password, _ := r.BasicAuth()
+			if user != "svc" || password != "dummy" {
+				t.Error("file credential not loaded")
+			}
+			w.WriteHeader(201)
+		}
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "file.airgapper.yaml")
+	creds := filepath.Join(dir, "file.creds.airgapper.yaml")
+	require.NoError(t, os.WriteFile(cfg, []byte(fmt.Sprintf("resources:\n  - type: generic\n    source: %s/source\n    destination: %s/destination\n    target_credentials_ref: test\n", server.URL, server.URL)), 0600))
+	require.NoError(t, os.WriteFile(creds, []byte("file:\n  - name: test\n    username: svc\n    password: dummy\n"), 0600))
+	out, err := runCLI(t, "sync", "--config", cfg, "--credentials", creds, "--output", "json")
+	require.NoError(t, err)
+	var report sync.Report
+	require.NoError(t, json.Unmarshal([]byte(out), &report))
+	require.Equal(t, 1, report.Summary.Synced)
+	require.Equal(t, 1, puts)
 }

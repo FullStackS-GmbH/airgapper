@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
@@ -108,6 +110,22 @@ func validateResource(index int, rc *ResourceConfig) error {
 			return fmt.Errorf("%s: destination_chart must be a chart name, not a repository path: %w", prefix, domain.ErrInvalidConfig)
 		}
 
+	case "file", "generic":
+		for _, raw := range []string{rc.Source, rc.Destination} {
+			u, err := url.Parse(strings.TrimSpace(raw))
+			if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path == "" || strings.HasSuffix(u.Path, "/") {
+				return fmt.Errorf("%s: file source and destination must be full HTTP(S) file URLs without userinfo, query or fragment: %w", prefix, domain.ErrInvalidConfig)
+			}
+		}
+		if digest := strings.TrimSpace(rc.SHA256); digest != "" {
+			if decoded, err := hex.DecodeString(digest); err != nil || len(decoded) != 32 {
+				return fmt.Errorf("%s: sha256 must contain 64 hexadecimal characters: %w", prefix, domain.ErrInvalidConfig)
+			}
+		}
+		if len(rc.Tags)+len(rc.Versions)+len(rc.Refs) != 0 || rc.ScannerRef != "" || rc.PolicyPath != "" || rc.DestinationChart != "" {
+			return fmt.Errorf("%s: files use exact URLs; tags, versions, refs, scanners and image/chart options do not apply: %w", prefix, domain.ErrInvalidConfig)
+		}
+
 	case "git":
 		if err := requireNonEmpty(prefix, map[string]string{
 			"source_repo":      rc.SourceRepo,
@@ -127,6 +145,10 @@ func validateResource(index int, rc *ResourceConfig) error {
 
 	default:
 		return fmt.Errorf("%s: unknown resource type %q: %w", prefix, rc.Type, domain.ErrInvalidConfig)
+	}
+
+	if resType != "file" && resType != "generic" && rc.SHA256 != "" {
+		return fmt.Errorf("%s: sha256 applies to file resources only: %w", prefix, domain.ErrInvalidConfig)
 	}
 
 	// Validate push_mode if explicitly set.
