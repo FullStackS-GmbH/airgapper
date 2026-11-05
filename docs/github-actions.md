@@ -147,3 +147,22 @@ git:
 ```
 
 Go to **Settings > Secrets and variables > Actions > New repository secret**, name it `UNIVERSAL_AIRGAPPER_CREDS`, and paste the YAML content.
+
+## Pull request container images
+
+The repository's `ci.yml` publishes a multi-architecture preview image to
+`ghcr.io/fullstacks-gmbh/airgapper` after lint, tests, and the binary build pass
+for a pull request targeting `main`. Publishing runs for branches in this
+repository; fork and Dependabot PRs keep the existing checks but skip publishing.
+The job uses `GITHUB_TOKEN` with job-scoped `packages: write` permission.
+
+Each build checks out the PR head commit and publishes two tags:
+
+- `pr-<number>` follows the latest successful build of that PR.
+- `pr-<number>-<full-head-commit-sha>` identifies the build's source commit.
+
+For example, use `ghcr.io/fullstacks-gmbh/airgapper:pr-123` as `AIRGAPPER_IMAGE`
+in a downstream GitLab pipeline, or set `image_tag: pr-123` when using the
+reusable GitHub workflow. Images support `linux/amd64` and `linux/arm64`.
+Preview images are unsigned; signing remains part of the release workflow.
+PR publishing does not change version tags or `latest`.

@@ -137,7 +137,8 @@ func (t *Transporter) Exists(ctx context.Context, endpoint domain.Endpoint, _ st
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		// Closing a read-only response cannot change the transfer result.
+		defer func() { _ = resp.Body.Close() }()
 		switch {
 		case resp.StatusCode == http.StatusNotFound:
 			exists = false
@@ -200,7 +201,7 @@ func (t *Transporter) Sync(ctx context.Context, resource domain.Resource, opts d
 	return result, nil
 }
 
-func (t *Transporter) copy(ctx context.Context, resource domain.Resource, srcCred, dstCred *domain.Credential) error {
+func (t *Transporter) copy(ctx context.Context, resource domain.Resource, srcCred, dstCred *domain.Credential) (resultErr error) {
 	src, srcTransport, err := clientFor(resource.Source)
 	if err != nil {
 		return err
@@ -215,8 +216,14 @@ func (t *Transporter) copy(ctx context.Context, resource domain.Resource, srcCre
 	if err != nil {
 		return fmt.Errorf("create file spool: %w", err)
 	}
-	defer os.Remove(spool.Name())
-	defer spool.Close()
+	defer func() {
+		if err := spool.Close(); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("close file spool: %w", err))
+		}
+		if err := os.Remove(spool.Name()); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("remove file spool: %w", err))
+		}
+	}()
 	var digest string
 	var size int64
 	err = t.retry.Do(ctx, t.logger, "download file", func() error {
@@ -230,7 +237,8 @@ func (t *Transporter) copy(ctx context.Context, resource domain.Resource, srcCre
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		// Closing a read-only response cannot change the transfer result.
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			return statusError(resp.StatusCode)
 		}
@@ -257,7 +265,8 @@ func (t *Transporter) copy(ctx context.Context, resource domain.Resource, srcCre
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		// Closing a read-only response cannot change the transfer result.
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return statusError(resp.StatusCode)
 		}

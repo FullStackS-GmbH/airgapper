@@ -164,7 +164,7 @@ func TestRedirectCredentialIsolation(t *testing.T) {
 	}))
 	defer sink.Close()
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, sink.URL+"/signed?secret=hidden", 302)
+		http.Redirect(w, r, sink.URL+"/signed?secret=hidden", http.StatusFound)
 	}))
 	defer origin.Close()
 	client, transport, err := clientFor(domain.Endpoint{})
@@ -182,7 +182,7 @@ func TestRedirectCredentialIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = resp.Body.Close()
-	if resp.StatusCode != 302 {
+	if resp.StatusCode != http.StatusFound {
 		t.Fatal("upload redirect followed")
 	}
 }

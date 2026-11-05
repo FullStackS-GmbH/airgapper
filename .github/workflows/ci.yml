@@ -56,3 +56,65 @@ jobs:
 
       - name: Build binary
         run: make build VERSION=ci COMMIT="${GITHUB_SHA}"
+
+  docker:
+    name: "[docker] Build & Push PR image"
+    runs-on: ubuntu-24.04
+    needs: [lint, test, build]
+    # Fork and Dependabot PRs do not receive a package-write token.
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Normalize repository name (lowercase)
+        id: repo
+        run: |
+          repo_lower=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          echo "repo=$repo_lower" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6
+        with:
+          images: ghcr.io/${{ steps.repo.outputs.repo }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=pr-${{ github.event.pull_request.number }}
+            type=raw,value=pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+            org.opencontainers.image.version=pr-${{ github.event.pull_request.number }}
+
+      - name: Build & Push Docker image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=pr-${{ github.event.pull_request.number }}
+            APP_COMMIT_SHA=${{ github.event.pull_request.head.sha }}
+          cache-from: type=gha,scope=pr-${{ github.event.pull_request.number }}
+          cache-to: type=gha,mode=max,scope=pr-${{ github.event.pull_request.number }}
