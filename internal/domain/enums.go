@@ -14,6 +14,8 @@ const (
 	ResourceTypeImage ResourceType = "image"
 	// ResourceTypeHelm represents Helm charts (OCI or legacy HTTP).
 	ResourceTypeHelm ResourceType = "helm"
+	// ResourceTypeFile represents an HTTP file copied to an HTTP PUT endpoint.
+	ResourceTypeFile ResourceType = "file"
 	// ResourceTypeGit represents Git repositories.
 	ResourceTypeGit ResourceType = "git"
 )
@@ -71,6 +73,8 @@ const (
 	CredentialTypeImage CredentialType = "image"
 	// CredentialTypeHelm is for Helm chart registries.
 	CredentialTypeHelm CredentialType = "helm"
+	// CredentialTypeFile is for HTTP file endpoints.
+	CredentialTypeFile CredentialType = "file"
 	// CredentialTypeGit is for Git hosting services.
 	CredentialTypeGit CredentialType = "git"
 )

@@ -1,6 +1,6 @@
 # Universal Airgapper
 
-A Go CLI tool for synchronizing container images, Helm charts, and Git repositories across air-gapped environments.
+A Go CLI tool for synchronizing container images, Helm charts, Git repositories, and generic files across air-gapped environments.
 
 <!-- Badges -->
 ![Build](https://img.shields.io/github/actions/workflow/status/fullstacks-gmbh/airgapper/ci.yml?branch=main) ![Release](https://img.shields.io/github/v/release/fullstacks-gmbh/airgapper) ![License](https://img.shields.io/github/license/fullstacks-gmbh/airgapper)
@@ -16,6 +16,7 @@ It is designed for environments where registries sit behind an air gap and artif
 
 - Sync **container images** between any Docker v2-compatible registries (Docker Hub, GHCR, Harbor, Nexus, private registries)
 - Sync **Helm charts** between OCI registries and legacy HTTP chart repositories
+- Sync **generic files** from exact HTTP(S) URLs into HTTP PUT repositories such as Artifactory, with optional SHA-256 verification
 - Sync **Git repositories** between any hosting services (GitHub, GitLab, Bitbucket, Azure Repos, self-hosted) via HTTPS or SSH
 - **Helm image extraction** -- render Helm charts and extract all container image references, generating a ready-to-use image sync config for air-gapped registry migration
 - **Regex patterns** for tags, chart versions, and git refs -- sync all matching versions automatically
@@ -229,6 +230,51 @@ resources:
       - "release/.*"          # regex: all release branches
       - "v[0-9]+\\..*"        # regex: all version tags
 ```
+
+### Generic File Resources
+
+Use `type: file` (`generic` is an alias) for archives, binaries, and other files.
+Both endpoints are complete file URLs; the destination must support HTTP HEAD
+and PUT, as Artifactory generic local repositories do. Each entry copies one
+file; version directories belong in the URLs. No tag/ref discovery, regex
+expansion, or scanner commands apply to files.
+
+```yaml
+resources:
+  - type: file
+    source: https://github.com/rancher/rke2/releases/download/v1.37.1%2Brke2r1/rke2.linux-amd64.tar.gz
+    destination: https://artifactory.example.com/artifactory/platform-artifacts/rke2/v1.37.1+rke2r1/rke2.linux-amd64.tar.gz
+    sha256: 909445617c4aedbaa150d36bc3cb0c575dc9e892140d6f3d4b57dbd02d7f411c
+    target_credentials_ref: artifactory
+    push_mode: skip
+```
+
+Credentials use a separate `file` section (Basic authentication, including
+Artifactory access tokens as passwords), resolved by reference or URL host:
+
+```yaml
+file:
+  - name: artifactory
+    username: svc-airgapper
+    password: YOUR_ACCESS_TOKEN
+```
+
+Downloads spool to a private temporary file, keeping memory bounded and allowing
+SHA-256 verification before upload. Temporary files are removed after success or
+failure. PUT includes `Content-Length` and `X-Checksum-Sha256`. An optional
+`sha256` pins the expected content; a mismatch prevents upload. An existing
+destination is skipped without downloading or checking its content; use `force`
+(or `overwrite`) to replace it. Only HEAD 404 means missing; other failed HEAD
+responses stop the copy. Dry runs only check the destination with HEAD.
+
+Source download redirects are supported, with credentials removed when the origin
+changes and HTTPS downgrades rejected. Upload and HEAD redirects are rejected.
+Userinfo, query strings, and fragments in configured URLs are rejected; supply
+credentials separately. Source redirects may use signed download URLs.
+`source_ca_cert` / `destination_ca_cert` accept directories containing `ca.crt`,
+in addition to system roots (including `SSL_CERT_FILE`). Explicit `*_insecure`
+flags disable certificate verification. Network operations use the normal retry
+policy and respect `--timeout` / context cancellation.
 
 ### Scanner Configuration
 
@@ -577,6 +623,7 @@ internal/
     image/                    # Container image sync (containers/image v5)
     helm/                     # Helm chart sync (Helm v4 SDK)
     git/                      # Git repo sync (go-git v5)
+    file/                     # HTTP file downloads and generic repository PUT uploads
   scanner/                    # Generic external command scanner
   sync/                       # Orchestration engine
   logging/                    # Structured logging (slog)

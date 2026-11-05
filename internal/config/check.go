@@ -81,6 +81,8 @@ func credentialType(t domain.ResourceType) domain.CredentialType {
 	switch t {
 	case domain.ResourceTypeHelm:
 		return domain.CredentialTypeHelm
+	case domain.ResourceTypeFile:
+		return domain.CredentialTypeFile
 	case domain.ResourceTypeGit:
 		return domain.CredentialTypeGit
 	default:

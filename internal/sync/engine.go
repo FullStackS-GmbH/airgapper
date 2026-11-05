@@ -250,6 +250,8 @@ func credentialTypeForResource(resourceType domain.ResourceType) domain.Credenti
 		return domain.CredentialTypeHelm
 	case domain.ResourceTypeGit:
 		return domain.CredentialTypeGit
+	case domain.ResourceTypeFile:
+		return domain.CredentialTypeFile
 	default:
 		return domain.CredentialType("")
 	}

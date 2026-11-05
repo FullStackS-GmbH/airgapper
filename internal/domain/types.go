@@ -5,7 +5,10 @@ import "log/slog"
 // Resource represents a single artifact to synchronize, parsed from the
 // configuration file. It is the primary input to the sync engine.
 type Resource struct {
-	// Type identifies the artifact kind (image, helm, git).
+	// SHA256 optionally pins the expected content digest for a file resource.
+	SHA256 string
+
+	// Type identifies the artifact kind (image, helm, git, file).
 	Type ResourceType
 
 	// Source is the origin endpoint from which the artifact is pulled.
@@ -138,7 +141,7 @@ type VersionResult struct {
 // ArtifactRef identifies a specific artifact for scanning. It provides enough
 // information for a scanner command to construct its target reference.
 type ArtifactRef struct {
-	// Type is the resource type (image, helm, git).
+	// Type is the resource type (image, helm, git, file).
 	Type ResourceType
 
 	// Registry is the hostname of the registry.
@@ -215,7 +218,7 @@ type Credential struct {
 	// Name is the credential identifier, used for reference lookups.
 	Name string
 
-	// Type identifies the service this credential is for (image, helm, git).
+	// Type identifies the service this credential is for (image, helm, git, file).
 	Type CredentialType
 
 	// Username is the authentication username. May be empty for SSH-only auth.

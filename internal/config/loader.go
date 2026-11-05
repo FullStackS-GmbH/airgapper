@@ -118,6 +118,7 @@ func loadSingleFile(path string) (*Config, error) {
 // credentialFile mirrors the YAML structure of a credentials file, where
 // credentials are grouped by type.
 type credentialFile struct {
+	File  []credentialEntry `yaml:"file"`
 	Image []credentialEntry `yaml:"image"`
 	Helm  []credentialEntry `yaml:"helm"`
 	Git   []credentialEntry `yaml:"git"`
@@ -203,6 +204,9 @@ func loadSingleCredentialFile(path string) ([]domain.Credential, error) {
 	}
 	for _, e := range cf.Helm {
 		creds = append(creds, toDomainCredential(e, domain.CredentialTypeHelm))
+	}
+	for _, e := range cf.File {
+		creds = append(creds, toDomainCredential(e, domain.CredentialTypeFile))
 	}
 	for _, e := range cf.Git {
 		creds = append(creds, toDomainCredential(e, domain.CredentialTypeGit))

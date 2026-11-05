@@ -45,14 +45,17 @@ type ScannerConfig struct {
 // Field usage depends on the Type value; unused fields for a given type are
 // silently ignored.
 type ResourceConfig struct {
-	// Type identifies the artifact kind: "image", "docker", "helm", or "git".
+	// SHA256 optionally pins a file resource to a SHA-256 hex digest.
+	SHA256 string `yaml:"sha256,omitempty"`
+
+	// Type identifies the artifact kind: "image", "docker", "helm", "git", "file", or "generic".
 	Type string `yaml:"type"`
 
-	// Source is the full image reference for image/docker resources
+	// Source is the exact HTTP(S) URL for files or full image reference for image/docker resources
 	// (e.g. "registry.example.com/repo/image").
 	Source string `yaml:"source,omitempty"`
 
-	// Destination is the target image reference for image/docker resources.
+	// Destination is the exact HTTP PUT URL for files or target image reference.
 	Destination string `yaml:"destination,omitempty"`
 
 	// Tags lists the image tags to synchronize (image/docker resources only).
@@ -181,6 +184,14 @@ func (rc *ResourceConfig) ToResource() domain.Resource {
 		r.Versions = rc.Versions
 		rc.applyTLSOptions(&r.Source, &r.Destination)
 
+	case "file", "generic":
+		r.Type = domain.ResourceTypeFile
+		r.Source = domain.Endpoint{Repository: strings.TrimSpace(rc.Source)}
+		r.Destination = domain.Endpoint{Repository: strings.TrimSpace(rc.Destination)}
+		r.SHA256 = strings.ToLower(strings.TrimSpace(rc.SHA256))
+		r.Versions = []string{""}
+		rc.applyTLSOptions(&r.Source, &r.Destination)
+
 	case "git":
 		r.Type = domain.ResourceTypeGit
 		r.Source = domain.Endpoint{
@@ -196,9 +207,8 @@ func (rc *ResourceConfig) ToResource() domain.Resource {
 }
 
 // applyTLSOptions copies the insecure/CA-cert TLS overrides onto the source
-// and destination endpoints. Only image and Helm resources go over a
-// registry.SystemContext-backed transport that honors these; git resources
-// ignore them, so callers only invoke this for image and helm.
+// and destination endpoints. Files honor these directly; image and Helm use a
+// registry.SystemContext-backed transport. Git resources ignore these options.
 func (rc *ResourceConfig) applyTLSOptions(source, destination *domain.Endpoint) {
 	source.Insecure = rc.SourceInsecure
 	destination.Insecure = rc.DestinationInsecure
