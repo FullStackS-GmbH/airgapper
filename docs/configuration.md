@@ -9,7 +9,7 @@ Configuration files must match one of these patterns:
 - `*.config.airgapper.yaml`
 - `*.config.airgapper.yml`
 
-Options that do not apply to a resource type are errors too, for example `policy_path` on a Helm or Git resource, `destination_chart` on an image resource, or `source_insecure` and the `*_ca_cert` options on a Git resource. Run `airgapper validate` to check a configuration, together with its credential references and the files it points to, without syncing.
+Options that do not apply to a resource type are errors too, for example `policy_path` or `platforms` on a Helm or Git resource, `destination_chart` on an image resource, or `source_insecure` and the `*_ca_cert` options on a Git resource. Run `airgapper validate` to check a configuration, together with its credential references and the files it points to, without syncing.
 
 Keys are checked strictly: an unknown or misspelled key (for example `policy_pth`) is an error, not silently ignored. The same applies to credential files.
 
@@ -71,6 +71,7 @@ The type `docker` is accepted as an alias for `image`.
 | `source_ca_cert`          | no        | Directory containing a `ca.crt` trusted for the source registry                   |
 | `destination_ca_cert`     | no        | Directory containing a `ca.crt` trusted for the destination registry              |
 | `policy_path`             | no        | Path to a signature verification policy.json; unset accepts any image unverified  |
+| `platforms`               | no        | `os/architecture` entries to copy from multi-platform images (default: `linux/amd64`); `all` copies every platform |
 
 Prefer `*_ca_cert` over `*_insecure` when the destination uses a private or
 self-signed CA: it trusts that CA specifically instead of disabling
@@ -97,6 +98,29 @@ docker:
     use-sigstore-attachments: true
   internal.example.com:
     use-sigstore-attachments: true
+```
+
+`platforms` selects which entries of a multi-platform image (an OCI image
+index or Docker manifest list) are copied. By default only `linux/amd64` is
+copied. List other `os/architecture` pairs to copy them instead, or set
+`platforms: [all]` to copy every platform, which was the behavior before this
+option existed. Every variant of a listed architecture is copied (e.g. all
+`linux/arm64` variants); variants cannot be selected individually.
+
+- The destination index lists only the copied platforms, so its digest differs
+  from the source index. Pull by tag, not by the source index digest.
+- A listed platform the image does not provide fails that tag.
+- Single-platform images are copied unchanged, whatever their platform.
+- An index that carries its own signatures cannot be reduced; use
+  `platforms: [all]` for such images.
+
+```yaml
+resources:
+  - type: image
+    source: quay.io/example/app
+    destination: internal-registry.corp/mirror/app
+    platforms: [linux/amd64, linux/arm64]
+    tags: ["1.2.3"]
 ```
 
 **Image name resolution** follows Docker conventions:

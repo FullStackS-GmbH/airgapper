@@ -16,6 +16,8 @@ import (
 	"go.podman.io/image/v5/copy"
 	ocilayout "go.podman.io/image/v5/oci/layout"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/fullstacks-gmbh/airgapper/internal/domain"
 )
 
 func TestCopyImageConcurrentMultiPlatform(t *testing.T) {
@@ -89,6 +91,58 @@ func TestCopyImageUsesConfiguredPolicy(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestCopyImageSelectsPlatforms(t *testing.T) {
+	t.Parallel()
+	source, err := ocilayout.ParseReference(multiPlatformLayout(t) + ":test")
+	require.NoError(t, err)
+	amd64 := domain.Platform{OS: "linux", Architecture: "amd64"}
+	arm64 := domain.Platform{OS: "linux", Architecture: "arm64"}
+	for _, tt := range []struct {
+		name      string
+		platforms []domain.Platform
+		wantArch  []string
+		wantErr   string
+	}{
+		{name: "all platforms", wantArch: []string{"amd64", "arm64"}},
+		{name: "amd64 only", platforms: []domain.Platform{amd64}, wantArch: []string{"amd64"}},
+		{name: "explicit list", platforms: []domain.Platform{amd64, arm64}, wantArch: []string{"amd64", "arm64"}},
+		{name: "missing platform", platforms: []domain.Platform{{OS: "windows", Architecture: "amd64"}}, wantErr: "no instances found for platform windows/amd64"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			destination, err := ocilayout.ParseReference(t.TempDir() + ":test")
+			require.NoError(t, err)
+			err = copyImage(ctx, destination, source, "", copyOptions(tt.platforms))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+
+			copied, err := destination.NewImageSource(ctx, nil)
+			require.NoError(t, err)
+			defer func() { assert.NoError(t, copied.Close()) }()
+			manifest, _, err := copied.GetManifest(ctx, nil)
+			require.NoError(t, err)
+			var index struct {
+				Manifests []struct {
+					Digest   digest.Digest
+					Platform struct{ Architecture string }
+				}
+			}
+			require.NoError(t, json.Unmarshal(manifest, &index))
+			var arches []string
+			for _, child := range index.Manifests {
+				arches = append(arches, child.Platform.Architecture)
+				_, _, err := copied.GetManifest(ctx, &child.Digest)
+				require.NoError(t, err, "every referenced manifest must exist at the destination")
+			}
+			assert.ElementsMatch(t, tt.wantArch, arches)
 		})
 	}
 }

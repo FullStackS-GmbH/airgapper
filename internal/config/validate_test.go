@@ -331,6 +331,11 @@ func TestValidate_OptionsThatDoNotApplyToTheResourceType(t *testing.T) {
 		{"destination_chart on image", func() config.ResourceConfig { r := image; r.DestinationChart = "c"; return r }, "destination_chart"},
 		{"source_insecure on git", func() config.ResourceConfig { r := git; r.SourceInsecure = true; return r }, "insecure"},
 		{"destination_ca_cert on git", func() config.ResourceConfig { r := git; r.DestinationCACert = "/ca"; return r }, "ca_cert"},
+		{"platforms on helm", func() config.ResourceConfig { r := helm; r.Platforms = []string{"linux/amd64"}; return r }, "platforms"},
+		{"platforms on git", func() config.ResourceConfig { r := git; r.Platforms = []string{"linux/amd64"}; return r }, "platforms"},
+		{"malformed platform", func() config.ResourceConfig { r := image; r.Platforms = []string{"amd64"}; return r }, "invalid platforms entry"},
+		{"platform with variant", func() config.ResourceConfig { r := image; r.Platforms = []string{"linux/arm64/v8"}; return r }, "invalid platforms entry"},
+		{"all combined with a platform", func() config.ResourceConfig { r := image; r.Platforms = []string{"all", "linux/amd64"}; return r }, "cannot be combined"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -344,9 +349,12 @@ func TestValidate_OptionsThatDoNotApplyToTheResourceType(t *testing.T) {
 		t.Parallel()
 		img := image
 		img.PolicyPath, img.SourceInsecure = "p.json", true
+		img.Platforms = []string{"linux/amd64", "linux/arm64"}
+		all := image
+		all.Platforms = []string{"all"}
 		h := helm
 		h.DestinationChart, h.DestinationInsecure = "c", true
-		require.NoError(t, config.Validate(&config.Config{Resources: []config.ResourceConfig{img, h, git}}))
+		require.NoError(t, config.Validate(&config.Config{Resources: []config.ResourceConfig{img, all, h, git}}))
 	})
 }
 

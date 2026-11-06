@@ -115,14 +115,12 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 			[]domain.OperationRecord{op(domain.OpFail, err.Error())}
 	}
 
-	logger.Info("copying image")
+	logger.Info("copying image", "platforms", platformNames(resource.Platforms))
 	err = t.retry.Do(ctx, logger, "copy image", func() error {
-		return copyImage(ctx, dstRef, srcRef, resource.PolicyPath, &copy.Options{
-			SourceCtx:          registry.SystemContext(srcCred, resource.Source.Insecure, resource.Source.CACertPath),
-			DestinationCtx:     registry.SystemContext(dstCred, resource.Destination.Insecure, resource.Destination.CACertPath),
-			ImageListSelection: copy.CopyAllImages,
-			ReportWriter:       io.Discard,
-		})
+		opts := copyOptions(resource.Platforms)
+		opts.SourceCtx = registry.SystemContext(srcCred, resource.Source.Insecure, resource.Source.CACertPath)
+		opts.DestinationCtx = registry.SystemContext(dstCred, resource.Destination.Insecure, resource.Destination.CACertPath)
+		return copyImage(ctx, dstRef, srcRef, resource.PolicyPath, opts)
 	})
 	if err != nil {
 		logger.Error("failed to copy image", "error", err)
@@ -140,6 +138,36 @@ func (t *Transporter) syncVersion(ctx context.Context, resource domain.Resource,
 		ops = append(ops, op(domain.OpPush, "pushed to destination"))
 	}
 	return domain.VersionResult{Version: version, Status: domain.SyncStatusSynced, Message: "copied"}, ops
+}
+
+// copyOptions selects which instances of a multi-platform index are copied.
+// No platforms copies the whole index. Otherwise only matching instances are
+// copied and the destination index is reduced to them, so it never references
+// manifests that were not pushed. A requested platform missing from the index
+// fails the copy.
+func copyOptions(platforms []domain.Platform) *copy.Options {
+	opts := &copy.Options{ImageListSelection: copy.CopyAllImages, ReportWriter: io.Discard}
+	if len(platforms) == 0 {
+		return opts
+	}
+	opts.ImageListSelection = copy.CopySpecificImages
+	opts.SparseManifestListAction = copy.StripSparseManifestList
+	for _, p := range platforms {
+		opts.InstancePlatforms = append(opts.InstancePlatforms, copy.InstancePlatformFilter{OS: p.OS, Architecture: p.Architecture})
+	}
+	return opts
+}
+
+// platformNames renders the selected platforms for logging; "all" when unset.
+func platformNames(platforms []domain.Platform) []string {
+	if len(platforms) == 0 {
+		return []string{"all"}
+	}
+	names := make([]string, 0, len(platforms))
+	for _, p := range platforms {
+		names = append(names, p.String())
+	}
+	return names
 }
 
 // copyImage owns the policy context for exactly one copy, including cleanup on

@@ -539,8 +539,10 @@ The git transporter reads that env var to obtain the `Authorization` header for 
 - `myrepo/myimage` → `registry-1.docker.io/myrepo/myimage`
 - `registry.example.com/myrepo/myimage` → as-is
 
-**Multi-arch handling**: By default, copy all platforms from a manifest list.
-If the source has a multi-arch manifest, the destination receives the same multi-arch manifest.
+**Multi-arch handling**: By default, copy only `linux/amd64` from a manifest list, using
+`CopySpecificImages` with platform filters and `StripSparseManifestList`, so the destination
+index lists only the copied platforms. A resource's `platforms` option selects other
+platforms; `platforms: [all]` copies the source manifest list unchanged (`CopyAllImages`).
 
 ### Helm Transporter (`internal/transport/helm/`)
 

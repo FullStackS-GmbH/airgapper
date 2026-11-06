@@ -179,11 +179,17 @@ resources:
     scanner_ref: trivy         # optional: run scanner before push
     source_credentials_ref: source-reg   # optional
     target_credentials_ref: internal-reg # optional
+    platforms:                 # optional, default: [linux/amd64]; [all] copies every platform
+      - linux/amd64
+      - linux/arm64
     tags:
       - "v1.0.0"
       - "v2\\..*"             # regex: all v2.x tags
       - "latest"
 ```
+
+Only `linux/amd64` is copied from multi-platform images unless `platforms` says
+otherwise; the destination index then lists only the copied platforms.
 
 ### Helm Resources
 
