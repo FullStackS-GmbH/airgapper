@@ -90,6 +90,9 @@ func validateResource(index int, rc *ResourceConfig) error {
 		if strings.TrimSpace(rc.DestinationChart) != "" {
 			return fmt.Errorf("%s: destination_chart applies to helm resources only: %w", prefix, domain.ErrInvalidConfig)
 		}
+		if err := validatePlatforms(prefix, rc.Platforms); err != nil {
+			return err
+		}
 
 	case "helm":
 		if err := requireNonEmpty(prefix, map[string]string{
@@ -105,6 +108,9 @@ func validateResource(index int, rc *ResourceConfig) error {
 		}
 		if strings.TrimSpace(rc.PolicyPath) != "" {
 			return fmt.Errorf("%s: policy_path applies to image resources only, charts are not signature-checked: %w", prefix, domain.ErrInvalidConfig)
+		}
+		if len(rc.Platforms) != 0 {
+			return fmt.Errorf("%s: platforms applies to image resources only: %w", prefix, domain.ErrInvalidConfig)
 		}
 		if name := strings.TrimSpace(rc.DestinationChart); name != "" && strings.Contains(strings.Trim(name, "/"), "/") {
 			return fmt.Errorf("%s: destination_chart must be a chart name, not a repository path: %w", prefix, domain.ErrInvalidConfig)
@@ -122,7 +128,7 @@ func validateResource(index int, rc *ResourceConfig) error {
 				return fmt.Errorf("%s: sha256 must contain 64 hexadecimal characters: %w", prefix, domain.ErrInvalidConfig)
 			}
 		}
-		if len(rc.Tags)+len(rc.Versions)+len(rc.Refs) != 0 || rc.ScannerRef != "" || rc.PolicyPath != "" || rc.DestinationChart != "" {
+		if len(rc.Tags)+len(rc.Versions)+len(rc.Refs)+len(rc.Platforms) != 0 || rc.ScannerRef != "" || rc.PolicyPath != "" || rc.DestinationChart != "" {
 			return fmt.Errorf("%s: files use exact URLs; tags, versions, refs, scanners and image/chart options do not apply: %w", prefix, domain.ErrInvalidConfig)
 		}
 
@@ -136,8 +142,8 @@ func validateResource(index int, rc *ResourceConfig) error {
 		if len(rc.Refs) == 0 {
 			return fmt.Errorf("%s: at least one ref is required for git resources: %w", prefix, domain.ErrInvalidConfig)
 		}
-		if strings.TrimSpace(rc.PolicyPath) != "" || strings.TrimSpace(rc.DestinationChart) != "" {
-			return fmt.Errorf("%s: policy_path and destination_chart do not apply to git resources: %w", prefix, domain.ErrInvalidConfig)
+		if strings.TrimSpace(rc.PolicyPath) != "" || strings.TrimSpace(rc.DestinationChart) != "" || len(rc.Platforms) != 0 {
+			return fmt.Errorf("%s: policy_path, destination_chart and platforms do not apply to git resources: %w", prefix, domain.ErrInvalidConfig)
 		}
 		if rc.SourceInsecure || rc.DestinationInsecure || strings.TrimSpace(rc.SourceCACert) != "" || strings.TrimSpace(rc.DestinationCACert) != "" {
 			return fmt.Errorf("%s: the insecure and ca_cert options do not apply to git resources: %w", prefix, domain.ErrInvalidConfig)
@@ -156,6 +162,23 @@ func validateResource(index int, rc *ResourceConfig) error {
 		return fmt.Errorf("%s: invalid push_mode %q: %w", prefix, rc.PushMode, domain.ErrInvalidConfig)
 	}
 
+	return nil
+}
+
+// validatePlatforms checks that every platforms entry is "os/architecture" or
+// "all", and that "all" is not combined with specific platforms.
+func validatePlatforms(prefix string, entries []string) error {
+	for _, entry := range entries {
+		if strings.EqualFold(strings.TrimSpace(entry), AllPlatforms) {
+			if len(entries) > 1 {
+				return fmt.Errorf("%s: platforms entry %q cannot be combined with other platforms: %w", prefix, AllPlatforms, domain.ErrInvalidConfig)
+			}
+			continue
+		}
+		if _, ok := parsePlatform(entry); !ok {
+			return fmt.Errorf("%s: invalid platforms entry %q, want os/architecture (e.g. linux/amd64) or %q: %w", prefix, entry, AllPlatforms, domain.ErrInvalidConfig)
+		}
+	}
 	return nil
 }
 

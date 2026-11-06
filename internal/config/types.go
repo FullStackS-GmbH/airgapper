@@ -4,6 +4,7 @@
 package config
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/fullstacks-gmbh/airgapper/internal/domain"
@@ -108,6 +109,11 @@ type ResourceConfig struct {
 	// unverified (the pre-existing default).
 	PolicyPath string `yaml:"policy_path,omitempty"`
 
+	// Platforms lists the os/architecture entries (e.g. "linux/arm64") to
+	// copy from a multi-platform image. Image resources only. Defaults to
+	// "linux/amd64" when empty; "all" copies every platform.
+	Platforms []string `yaml:"platforms,omitempty"`
+
 	// SourceCredentialsRef is the optional name of a credential entry for
 	// authenticating against the source.
 	SourceCredentialsRef string `yaml:"source_credentials_ref,omitempty"`
@@ -168,6 +174,7 @@ func (rc *ResourceConfig) ToResource() domain.Resource {
 		r.Destination = parseImageEndpoint(rc.Destination)
 		r.Versions = rc.Tags
 		r.PolicyPath = strings.TrimSpace(rc.PolicyPath)
+		r.Platforms = imagePlatforms(rc.Platforms)
 		rc.applyTLSOptions(&r.Source, &r.Destination)
 
 	case "helm":
@@ -214,6 +221,41 @@ func (rc *ResourceConfig) applyTLSOptions(source, destination *domain.Endpoint) 
 	destination.Insecure = rc.DestinationInsecure
 	source.CACertPath = strings.TrimSpace(rc.SourceCACert)
 	destination.CACertPath = strings.TrimSpace(rc.DestinationCACert)
+}
+
+// AllPlatforms is the platforms entry that copies every platform of an image.
+const AllPlatforms = "all"
+
+// DefaultPlatform is the platform copied when an image resource sets none.
+const DefaultPlatform = "linux/amd64"
+
+// imagePlatforms resolves the configured platforms for an image resource:
+// DefaultPlatform when unset, nil (every platform) for AllPlatforms. Malformed
+// entries are rejected by config.Validate and skipped here.
+func imagePlatforms(entries []string) []domain.Platform {
+	if len(entries) == 0 {
+		entries = []string{DefaultPlatform}
+	}
+	var platforms []domain.Platform
+	for _, entry := range entries {
+		if strings.EqualFold(strings.TrimSpace(entry), AllPlatforms) {
+			return nil
+		}
+		platform, ok := parsePlatform(entry)
+		if ok && !slices.Contains(platforms, platform) {
+			platforms = append(platforms, platform)
+		}
+	}
+	return platforms
+}
+
+// parsePlatform parses an "os/architecture" entry, lower-cased.
+func parsePlatform(entry string) (domain.Platform, bool) {
+	osName, arch, found := strings.Cut(strings.ToLower(strings.TrimSpace(entry)), "/")
+	if !found || osName == "" || arch == "" || strings.ContainsAny(arch, "/ ") || strings.Contains(osName, " ") {
+		return domain.Platform{}, false
+	}
+	return domain.Platform{OS: osName, Architecture: arch}, true
 }
 
 // parseImageEndpoint splits an image reference like

@@ -39,6 +39,12 @@ type Resource struct {
 	// only; ignored for other resource types.
 	PolicyPath string
 
+	// Platforms selects which entries of a multi-platform image index are
+	// copied. The destination index is reduced to the copied entries. Empty
+	// means every platform is copied. Image resources only; single-platform
+	// images are copied unchanged.
+	Platforms []Platform
+
 	// SourceCredentialsRef is the optional name of the credential entry used
 	// to authenticate against the source.
 	SourceCredentialsRef string
@@ -46,6 +52,19 @@ type Resource struct {
 	// TargetCredentialsRef is the optional name of the credential entry used
 	// to authenticate against the destination.
 	TargetCredentialsRef string
+}
+
+// Platform identifies an image platform by operating system and CPU
+// architecture, e.g. linux/amd64. Variants are not distinguished: every
+// variant of a matching architecture is selected.
+type Platform struct {
+	OS           string
+	Architecture string
+}
+
+// String returns the platform in os/architecture form.
+func (p Platform) String() string {
+	return p.OS + "/" + p.Architecture
 }
 
 // Endpoint represents a registry or repository location.

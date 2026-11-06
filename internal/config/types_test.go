@@ -127,3 +127,29 @@ func TestResourceConfigToResource_AppliesPolicyPathForImageOnly(t *testing.T) {
 	}
 	assert.Empty(t, gitRC.ToResource().PolicyPath)
 }
+
+func TestResourceConfigToResource_ImagePlatforms(t *testing.T) {
+	t.Parallel()
+
+	amd64 := domain.Platform{OS: "linux", Architecture: "amd64"}
+	arm64 := domain.Platform{OS: "linux", Architecture: "arm64"}
+	for _, tt := range []struct {
+		name      string
+		platforms []string
+		want      []domain.Platform
+	}{
+		{name: "defaults to linux/amd64", want: []domain.Platform{amd64}},
+		{name: "all copies every platform", platforms: []string{"all"}, want: nil},
+		{name: "all is case-insensitive", platforms: []string{" ALL "}, want: nil},
+		{name: "explicit list is normalized and deduplicated", platforms: []string{"linux/amd64", " Linux/ARM64 ", "linux/amd64"}, want: []domain.Platform{amd64, arm64}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			rc := config.ResourceConfig{Type: "image", Source: "a.io/x", Destination: "b.io/x", Tags: []string{"v1"}, Platforms: tt.platforms}
+			assert.Equal(t, tt.want, rc.ToResource().Platforms)
+		})
+	}
+
+	helm := config.ResourceConfig{Type: "helm", SourceRegistry: "a.io", SourceChart: "c", DestinationRegistry: "b.io", DestinationRepo: "r", Versions: []string{"1"}}
+	assert.Nil(t, helm.ToResource().Platforms, "platforms apply to image resources only")
+}
