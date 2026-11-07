@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -tags=containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay,http2legacy \
     -trimpath \
     -ldflags="-s -w -X main.version=${APP_VERSION} -X main.commit=${APP_COMMIT_SHA}" \
-    -o /airgapper \
+    -o /usr/local/bin/airgapper \
     ./cmd/airgapper
 
 # Stage 2: CI runtime image (SUSE BCI hardened base)
@@ -47,7 +47,7 @@ LABEL org.opencontainers.image.title="airgapper" \
       org.opencontainers.image.source="https://github.com/fullstacks-gmbh/airgapper" \
       org.opencontainers.image.vendor="FULLSTACKS GmbH"
 
-COPY --from=builder /airgapper /airgapper
+COPY --from=builder /usr/local/bin/airgapper /airgapper
 RUN zypper --non-interactive ref && \
     zypper --non-interactive in --no-recommends \
       bash \
