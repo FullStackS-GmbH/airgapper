@@ -60,10 +60,60 @@ jobs:
       - name: Build binary
         run: make build VERSION=ci COMMIT="${GITHUB_SHA}"
 
+  xgrep:
+    name: "[security] xgrep scan"
+    runs-on: ubuntu-24.04
+    needs: [build]
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Install xgrep
+        run: npm install -g @mondoohq/xgrep@0.101.0
+
+      # --no-baseline: scan every file on the PR branch, not only the diff.
+      - name: Run xgrep
+        run: xgrep ci --no-baseline --incognito --no-telemetry --no-dep-scan -o xgrep.sarif .
+
+      - name: Render report
+        run: |
+          {
+            echo '<!-- xgrep-report -->'
+            echo "### xgrep scan: $(jq '[.runs[].results[]] | length' xgrep.sarif) finding(s)"
+            jq -r '
+              [.runs[].results[]] | if length == 0 then "No findings." else
+                "| Level | Rule | Location | Message |",
+                "| --- | --- | --- | --- |",
+                (.[] | .locations[0].physicalLocation as $l
+                  | "| \(.level) | `\(.ruleId)` | `\($l.artifactLocation.uri):\($l.region.startLine)` | \(.message.text | gsub("[\r\n]+"; " ") | gsub("\\|"; "\\|") | .[0:200]) |")
+              end' xgrep.sarif
+          } > xgrep.md
+          cat xgrep.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on PR
+        # Fork and Dependabot PRs only get a read-only token.
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        run: |
+          id=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.body | startswith("<!-- xgrep-report -->")) | .id' | head -n1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -F body=@xgrep.md
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -F body=@xgrep.md
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
   docker:
     name: "[docker] Build & Push PR image"
     runs-on: ubuntu-24.04
-    needs: [lint, test, build]
+    needs: [lint, test, build, xgrep]
     # Fork and Dependabot PRs do not receive a package-write token.
     if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
     permissions:
