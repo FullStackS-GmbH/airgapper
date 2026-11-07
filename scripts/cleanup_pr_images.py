@@ -6,6 +6,7 @@ and attestation manifests shared with retained images are protected.
 """
 
 import base64
+import hmac
 import json
 import os
 import re
@@ -161,7 +162,7 @@ def cleanup(api, repository, owner_type, number):
         current = api.request(f"{base}/{version['id']}", missing_ok=True)
         if current is None:
             continue
-        if current["name"] != digest:
+        if not hmac.compare_digest(current["name"], digest):
             raise RuntimeError("Package version identity changed; refusing deletion")
         if any(not pr_tag(t, number) for t in tags(current)):
             # A release or another PR may have acquired this digest since listing.
