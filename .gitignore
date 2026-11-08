@@ -54,3 +54,4 @@ result
 
 # xgrep
 .xgrep/
+!.xgrep/findings.json
