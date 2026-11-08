@@ -59,3 +59,7 @@ RUN zypper --non-interactive ref && \
     zypper clean --all
 
 RUN ln -sf /airgapper /usr/local/bin/airgapper
+
+# Run as unprivileged user; real passwd entry + HOME so git/ssh work.
+RUN useradd --system --create-home --uid 10001 airgapper
+USER airgapper
