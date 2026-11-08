@@ -3,7 +3,7 @@
 # Pinned to BUILDPLATFORM so this stage always runs natively on the runner.
 # The build is CGO-free, so Go cross-compiles to TARGETARCH far faster than
 # running an emulated arm64 toolchain under QEMU.
-FROM --platform=$BUILDPLATFORM golang:1.26.3-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS builder
 
 ARG APP_VERSION="dev"
 ARG APP_COMMIT_SHA="unknown"
