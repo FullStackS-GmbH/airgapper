@@ -2,10 +2,10 @@ name: "[cleanup] Closed PR images"
 
 on:
   pull_request_target:
-    types: [closed]
-    branches: [main]
+    types: [ closed ]
+    branches: [ main ]
 
-permissions: {}
+permissions: { }
 
 jobs:
   cleanup:
@@ -22,7 +22,7 @@ jobs:
       cancel-in-progress: false
     steps:
       # pull_request_target runs trusted base-branch code, never the PR head.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.3.0
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
