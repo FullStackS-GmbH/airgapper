@@ -2,8 +2,11 @@
 
 A Go CLI tool for synchronizing container images, Helm charts, Git repositories, and generic files across air-gapped environments.
 
-<!-- Badges -->
-![Build](https://img.shields.io/github/actions/workflow/status/fullstacks-gmbh/airgapper/ci.yml?branch=main) ![Release](https://img.shields.io/github/v/release/fullstacks-gmbh/airgapper) ![License](https://img.shields.io/github/license/fullstacks-gmbh/airgapper)
+<!-- Badges: build status, release, toolchain -->
+[![Build](https://img.shields.io/github/actions/workflow/status/FullStackS-GmbH/airgapper/release.yml?branch=main&label=build)](https://github.com/FullStackS-GmbH/airgapper/actions/workflows/release.yml?query=branch%3Amain) [![PR checks](https://img.shields.io/github/actions/workflow/status/FullStackS-GmbH/airgapper/ci.yml?event=pull_request&label=pr%20checks)](https://github.com/FullStackS-GmbH/airgapper/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/FullStackS-GmbH/airgapper)](https://github.com/FullStackS-GmbH/airgapper/releases/latest) [![Go version](https://img.shields.io/github/go-mod/go-version/FullStackS-GmbH/airgapper)](go.mod) [![License](https://img.shields.io/github/license/FullStackS-GmbH/airgapper)](LICENSE)
+
+<!-- Badges: supply chain and scans -->
+[![Signed with cosign](https://img.shields.io/badge/signed-cosign-blue)](#verify-signatures) [![SBOM CycloneDX](https://img.shields.io/badge/SBOM-CycloneDX-blue)](https://github.com/FullStackS-GmbH/airgapper/releases/latest) [![SAST xgrep](https://img.shields.io/badge/SAST-xgrep-blue)](.github/workflows/ci.yml) [![Lint golangci-lint](https://img.shields.io/badge/lint-golangci--lint-blue)](.github/workflows/ci.yml) [![Container image](https://img.shields.io/badge/image-ghcr.io-blue)](https://github.com/FullStackS-GmbH/airgapper/pkgs/container/airgapper) [![Platforms](https://img.shields.io/badge/platforms-linux%20%7C%20darwin%20%7C%20windows-blue)](https://github.com/FullStackS-GmbH/airgapper/releases/latest) [![Architectures](https://img.shields.io/badge/arch-amd64%20%7C%20arm64-blue)](https://github.com/FullStackS-GmbH/airgapper/releases/latest)
 
 ---
 
@@ -11,6 +14,66 @@ A Go CLI tool for synchronizing container images, Helm charts, Git repositories,
 
 Universal Airgapper reads a YAML configuration file listing artifacts (container images, Helm charts, Git repos) with their source and destination, then copies each artifact from source to destination.
 It is designed for environments where registries sit behind an air gap and artifacts must be moved in a controlled, automated way.
+
+## How it works
+
+The diagram shows the flow of one `airgapper sync` run, from configuration and sources to destinations and reports.
+
+```mermaid
+flowchart LR
+    subgraph inputs["Configuration"]
+        cfg["Config files<br/>*.config.airgapper.yaml"]
+        creds["Credential files<br/>*.creds.airgapper.yaml<br/>passwords, tokens, SSH keys"]
+        flags["CLI flags and<br/>AIRGAPPER_* env vars"]
+    end
+
+    subgraph sources["Sources"]
+        srcImg["Container registries"]
+        srcHelm["Helm repositories<br/>OCI and HTTP"]
+        srcGit["Git hosts<br/>HTTPS and SSH"]
+        srcFile["HTTP(S) file URLs"]
+    end
+
+    subgraph core["Universal Airgapper"]
+        direction TB
+        load["Load, merge and validate"]
+        expand["Expand versions<br/>exact tags, regex patterns,<br/>platforms amd64, arm64, all"]
+        exists{"Exists at<br/>destination?"}
+        scan["Optional scanner<br/>any external command"]
+        copy["Copy and push"]
+        load --> expand --> exists
+        exists -- " missing, or push mode force " --> scan --> copy
+    end
+
+    subgraph targets["Destinations"]
+        dstImg["Container registries"]
+        dstHelm["Helm OCI registries<br/>and chart repositories"]
+        dstGit["Git hosts"]
+        dstFile["HTTP PUT repositories<br/>such as Artifactory"]
+    end
+
+    subgraph outputs["Reports"]
+        logs["Structured logs<br/>JSON or text"]
+        report["Result report<br/>--output json"]
+        dry["Dry-run log<br/>no writes"]
+    end
+
+    inputs --> load
+    srcImg & srcHelm & srcGit & srcFile --> expand
+    copy --> dstImg & dstHelm & dstGit & dstFile
+    core --> outputs
+    srcHelm -. " airgapper helm images<br/>extracts image references " .-> genCfg["Generated image config"]
+    genCfg -. " input for next sync " .-> cfg
+```
+
+The table summarizes the supported artifact types.
+
+| Artifact         | Source                                 | Destination                            | Version selection                | Scanner        |
+| ---------------- | -------------------------------------- | -------------------------------------- | -------------------------------- | -------------- |
+| Container image  | Docker v2 registry                     | Docker v2 registry                     | Tags, regex, platforms           | Supported      |
+| Helm chart       | OCI registry or HTTP chart repository  | OCI registry or HTTP chart repository  | Versions, regex                  | Supported      |
+| Git repository   | Git host via HTTPS or SSH              | Git host via HTTPS or SSH              | Branches and tags, regex         | Supported      |
+| Generic file     | HTTP(S) URL                            | HTTP PUT repository                    | One exact URL, optional SHA-256  | Not supported  |
 
 ## Features
 
@@ -47,19 +110,19 @@ Without `AIRGAPPER_INSTALL_DIR`, it installs into the first of `~/.local/bin`, `
 
 Control the script with these environment variables.
 
-| Variable                   | Default     | Effect                                                      |
-| -------------------------- | ----------- | ----------------------------------------------------------- |
-| `AIRGAPPER_VERSION`        | latest      | Install a specific release, with or without the `v` prefix  |
-| `AIRGAPPER_INSTALL_DIR`    | auto        | Target directory, created if missing                        |
-| `AIRGAPPER_OS`             | `uname -s`  | Override the platform (`linux`, `darwin`, `windows`)        |
-| `AIRGAPPER_ARCH`           | `uname -m`  | Override the architecture (`amd64`, `arm64`)                |
-| `AIRGAPPER_YES`            | `0`         | Skip the confirmation prompt                                |
-| `AIRGAPPER_QUIET`          | `0`         | Suppress progress output                                    |
-| `AIRGAPPER_SKIP_CHECKSUM`  | `0`         | Install without checksum verification, not recommended      |
-| `AIRGAPPER_SKIP_SIGNATURE` | `0`         | Skip signature verification even when cosign is installed   |
-| `AIRGAPPER_COSIGN_KEY`     | repo key    | Local path or URL of the public key to verify against       |
-| `AIRGAPPER_COSIGN_OFFLINE` | `0`         | Verify without contacting the Rekor transparency log        |
-| `NO_COLOR`                 | unset       | Disable colored output                                      |
+| Variable                    | Default     | Effect                                                      |
+| --------------------------- | ----------- | ----------------------------------------------------------- |
+| `AIRGAPPER_VERSION`         | latest      | Install a specific release, with or without the `v` prefix  |
+| `AIRGAPPER_INSTALL_DIR`     | auto        | Target directory, created if missing                        |
+| `AIRGAPPER_OS`              | `uname -s`  | Override the platform (`linux`, `darwin`, `windows`)        |
+| `AIRGAPPER_ARCH`            | `uname -m`  | Override the architecture (`amd64`, `arm64`)                |
+| `AIRGAPPER_YES`             | `0`         | Skip the confirmation prompt                                |
+| `AIRGAPPER_QUIET`           | `0`         | Suppress progress output                                    |
+| `AIRGAPPER_SKIP_CHECKSUM`   | `0`         | Install without checksum verification, not recommended      |
+| `AIRGAPPER_SKIP_SIGNATURE`  | `0`         | Skip signature verification even when cosign is installed   |
+| `AIRGAPPER_COSIGN_KEY`      | repo key    | Local path or URL of the public key to verify against       |
+| `AIRGAPPER_COSIGN_OFFLINE`  | `0`         | Verify without contacting the Rekor transparency log        |
+| `NO_COLOR`                  | unset       | Disable colored output                                      |
 
 Signature verification is best effort.
 The script skips it when cosign is missing or when the release carries no signature bundle, and it fails the install when cosign is present and verification does not pass.
@@ -134,7 +197,7 @@ On hosts without internet access, add `--insecure-ignore-tlog=true` to verify ag
 
 ### Configure
 
-Create a configuration file (e.g., `config.config.config.airgapper.yaml`):
+Create a configuration file (e.g., `config.config.airgapper.yaml`):
 
 ```yaml
 resources:
@@ -179,7 +242,7 @@ resources:
     scanner_ref: trivy         # optional: run scanner before push
     source_credentials_ref: source-reg   # optional
     target_credentials_ref: internal-reg # optional
-    platforms:                 # optional, default: [linux/amd64]; [all] copies every platform
+    platforms: # optional, default: [linux/amd64]; [all] copies every platform
       - linux/amd64
       - linux/arm64
     tags:
@@ -188,8 +251,7 @@ resources:
       - "latest"
 ```
 
-Only `linux/amd64` is copied from multi-platform images unless `platforms` says
-otherwise; the destination index then lists only the copied platforms.
+Only `linux/amd64` is copied from multi-platform images unless `platforms` says otherwise; the destination index then lists only the copied platforms.
 
 ### Helm Resources
 
@@ -211,12 +273,9 @@ resources:
 
 The destination OCI artifact name is automatically derived from `Chart.yaml`, which also handles vendor artifacts whose repository name differs from the real chart name.
 
-Chart pushes include `application/vnd.oci.image.manifest.v1+json` in the manifest
-body and deploy the final version tag directly. This supports Artifactory
-registries that otherwise mislabel untagged Helm manifests as Docker schema 1,
-causing Helm 4.0.4's digest-fetch/tag step to fail with
-`mismatch response Content-Type`. Chart configuration and layer media types stay
-compatible with Helm OCI clients.
+Chart pushes include `application/vnd.oci.image.manifest.v1+json` in the manifest body and deploy the final version tag directly.
+This supports Artifactory registries that otherwise mislabel untagged Helm manifests as Docker schema 1, causing Helm 4.0.4's digest-fetch/tag step to fail with `mismatch response Content-Type`.
+Chart configuration and layer media types stay compatible with Helm OCI clients.
 Set `destination_chart` only for an explicit name override.
 
 ### Git Resources
@@ -240,10 +299,9 @@ resources:
 ### Generic File Resources
 
 Use `type: file` (`generic` is an alias) for archives, binaries, and other files.
-Both endpoints are complete file URLs; the destination must support HTTP HEAD
-and PUT, as Artifactory generic local repositories do. Each entry copies one
-file; version directories belong in the URLs. No tag/ref discovery, regex
-expansion, or scanner commands apply to files.
+Both endpoints are complete file URLs; the destination must support HTTP HEAD and PUT, as Artifactory generic local repositories do.
+Each entry copies one file; version directories belong in the URLs.
+No tag/ref discovery, regex expansion, or scanner commands apply to files.
 
 ```yaml
 resources:
@@ -255,8 +313,7 @@ resources:
     push_mode: skip
 ```
 
-Credentials use a separate `file` section (Basic authentication, including
-Artifactory access tokens as passwords), resolved by reference or URL host:
+Credentials use a separate `file` section (Basic authentication, including Artifactory access tokens as passwords), resolved by reference or URL host:
 
 ```yaml
 file:
@@ -265,22 +322,21 @@ file:
     password: YOUR_ACCESS_TOKEN
 ```
 
-Downloads spool to a private temporary file, keeping memory bounded and allowing
-SHA-256 verification before upload. Temporary files are removed after success or
-failure. PUT includes `Content-Length` and `X-Checksum-Sha256`. An optional
-`sha256` pins the expected content; a mismatch prevents upload. An existing
-destination is skipped without downloading or checking its content; use `force`
-(or `overwrite`) to replace it. Only HEAD 404 means missing; other failed HEAD
-responses stop the copy. Dry runs only check the destination with HEAD.
+Downloads spool to a private temporary file, keeping memory bounded and allowing SHA-256 verification before upload.
+Temporary files are removed after success or failure.
+PUT includes `Content-Length` and `X-Checksum-Sha256`.
+An optional `sha256` pins the expected content; a mismatch prevents upload.
+An existing destination is skipped without downloading or checking its content; use `force` (or `overwrite`) to replace it.
+Only HEAD 404 means missing; other failed HEAD responses stop the copy.
+Dry runs only check the destination with HEAD.
 
-Source download redirects are supported, with credentials removed when the origin
-changes and HTTPS downgrades rejected. Upload and HEAD redirects are rejected.
-Userinfo, query strings, and fragments in configured URLs are rejected; supply
-credentials separately. Source redirects may use signed download URLs.
-`source_ca_cert` / `destination_ca_cert` accept directories containing `ca.crt`,
-in addition to system roots (including `SSL_CERT_FILE`). Explicit `*_insecure`
-flags disable certificate verification. Network operations use the normal retry
-policy and respect `--timeout` / context cancellation.
+Source download redirects are supported, with credentials removed when the origin changes and HTTPS downgrades rejected.
+Upload and HEAD redirects are rejected.
+Userinfo, query strings, and fragments in configured URLs are rejected; supply credentials separately.
+Source redirects may use signed download URLs.
+`source_ca_cert` / `destination_ca_cert` accept directories containing `ca.crt`, in addition to system roots (including `SSL_CERT_FILE`).
+Explicit `*_insecure` flags disable certificate verification.
+Network operations use the normal retry policy and respect `--timeout` / context cancellation.
 
 ### Scanner Configuration
 
@@ -411,17 +467,17 @@ airgapper version         Print version, commit, and build date
 
 ### Global Flags
 
-| Flag             | Short  | Env Var                  | Default  | Description                               |
-| ---------------- | ------ | ------------------------ | -------- | ----------------------------------------- |
-| `--config`       | `-c`   | `AIRGAPPER_CONFIG`       | (none)   | Path to config file or folder             |
-| `--credentials`  |        | `AIRGAPPER_CREDENTIALS`  | (none)   | Path to credentials file or folder        |
-| `--debug`        | `-d`   | `AIRGAPPER_DEBUG`        | `false`  | Enable debug logging (JSON, DEBUG level)  |
-| `--dry-run`      |        | `AIRGAPPER_DRY_RUN`      | `false`  | Disable all write/push operations         |
-| `--log-format`   |        | `AIRGAPPER_LOG_FORMAT`   | `json`   | Log format: `json` or `text`              |
-| `--dry-run-log`  |        | `AIRGAPPER_DRY_RUN_LOG`  | (auto)   | Path for the dry-run log file             |
-| `--timeout`      |        | `AIRGAPPER_TIMEOUT`      | `0`      | Overall run timeout in seconds (0 = off)  |
-| `--retry-attempts` |      | `AIRGAPPER_RETRY_ATTEMPTS` | `3`    | Tries per network operation, including the first (1 = no retry) |
-| `--retry-delay`  |        | `AIRGAPPER_RETRY_DELAY`  | `2`      | Seconds before the first retry, doubled for each further retry (with jitter, max 30 s) |
+| Flag                | Short  | Env Var                     | Default  | Description                                                                             |
+| ------------------- | ------ | --------------------------- | -------- | --------------------------------------------------------------------------------------- |
+| `--config`          | `-c`   | `AIRGAPPER_CONFIG`          | (none)   | Path to config file or folder                                                           |
+| `--credentials`     |        | `AIRGAPPER_CREDENTIALS`     | (none)   | Path to credentials file or folder                                                      |
+| `--debug`           | `-d`   | `AIRGAPPER_DEBUG`           | `false`  | Enable debug logging (JSON, DEBUG level)                                                |
+| `--dry-run`         |        | `AIRGAPPER_DRY_RUN`         | `false`  | Disable all write/push operations                                                       |
+| `--log-format`      |        | `AIRGAPPER_LOG_FORMAT`      | `json`   | Log format: `json` or `text`                                                            |
+| `--dry-run-log`     |        | `AIRGAPPER_DRY_RUN_LOG`     | (auto)   | Path for the dry-run log file                                                           |
+| `--timeout`         |        | `AIRGAPPER_TIMEOUT`         | `0`      | Overall run timeout in seconds (0 = off)                                                |
+| `--retry-attempts`  |        | `AIRGAPPER_RETRY_ATTEMPTS`  | `3`      | Tries per network operation, including the first (1 = no retry)                         |
+| `--retry-delay`     |        | `AIRGAPPER_RETRY_DELAY`     | `2`      | Seconds before the first retry, doubled for each further retry (with jitter, max 30 s)  |
 
 ### Retries
 
@@ -431,7 +487,8 @@ A retry that is logged shows the operation, the attempt and the delay.
 
 ### `validate` and `--output json`
 
-`airgapper validate` checks the configuration and credentials without contacting any registry or host. It reports every problem in one run:
+`airgapper validate` checks the configuration and credentials without contacting any registry or host.
+It reports every problem in one run:
 
 - unknown or misspelled keys, missing required fields, invalid push modes and unknown `scanner_ref` names
 - options that do not apply to the resource type (for example `policy_path` on a Helm or Git resource)
@@ -440,7 +497,8 @@ A retry that is logged shows the operation, the attempt and the delay.
 
 It exits `0` when everything is fine and `2` otherwise.
 
-`sync` and `validate` accept `--output json` (`AIRGAPPER_OUTPUT`, default `text`). With it, stdout carries exactly one JSON document and logs stay on stderr, so a pipeline can read the result without parsing text:
+`sync` and `validate` accept `--output json` (`AIRGAPPER_OUTPUT`, default `text`).
+With it, stdout carries exactly one JSON document and logs stay on stderr, so a pipeline can read the result without parsing text:
 
 ```shell
 airgapper validate --config ./configs/ --credentials ./creds/ --output json
@@ -469,11 +527,11 @@ airgapper helm images \
 
 ### Exit Codes
 
-| Code  | Meaning                                   |
-| ----- | ----------------------------------------- |
-| `0`   | All resources synced successfully         |
-| `1`   | Sync completed with one or more failures  |
-| `2`   | Usage or configuration error (also `validate` finding problems) |
+| Code  | Meaning                                                          |
+| ----- | ---------------------------------------------------------------- |
+| `0`   | All resources synced successfully                                |
+| `1`   | Sync completed with one or more failures                         |
+| `2`   | Usage or configuration error (also `validate` finding problems)  |
 
 ### Examples
 
@@ -592,7 +650,7 @@ See [docs/github-actions.md](docs/github-actions.md).
 ```yaml
 jobs:
   sync:
-    uses: fullstacks-gmbh/universal-airgapper/.github/workflows/universal-airgapper.yml@main
+    uses: fullstacks-gmbh/airgapper/.github/workflows/universal-airgapper.yml@main
     with:
       config-folder: ${{ github.workspace }}/configs
     secrets:

@@ -41,8 +41,8 @@ func caCertPool(certDir string) (*x509.CertPool, error) {
 	if err != nil || pool == nil {
 		pool = x509.NewCertPool()
 	}
-	caPath := filepath.Join(certDir, "ca.crt")
-	pemData, err := os.ReadFile(caPath)
+	caPath := filepath.Join(filepath.Clean(certDir), "ca.crt")
+	pemData, err := os.ReadFile(filepath.Clean(caPath))
 	if err != nil {
 		return nil, fmt.Errorf("read CA cert %q: %w", caPath, err)
 	}
