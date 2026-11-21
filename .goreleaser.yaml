@@ -14,7 +14,6 @@ builds:
       - exclude_graphdriver_btrfs
       - exclude_graphdriver_devicemapper
       - exclude_graphdriver_overlay
-      - http2legacy
     ldflags:
       - -s -w -X main.version={{ .Tag }} -X main.commit={{ .ShortCommit }} -X main.date={{ .Date }}
     goos:
@@ -34,12 +33,15 @@ checksum:
   split: false
   disable: false
 
+# xgrep reads manifests (go.mod), not binaries, so one SBOM covers every platform.
+# The command runs inside dist/, hence the ".." target. --ref HEAD reads the git
+# tree only, so untracked dirs (e.g. the .devenv Go module cache) are not inventoried.
 sboms:
   - documents:
-      - "{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}.cdx.sbom"
-    cmd: syft
-    args: [ "$artifact", "-o", "cyclonedx-json=$document" ]
-    artifacts: binary
+      - "{{ .ProjectName }}_{{ .Version }}.cdx.sbom"
+    cmd: xgrep
+    args: [ "sbom", "..", "--ref", "HEAD", "--format", "cyclonedx-json", "-o", "$document", "--no-telemetry" ]
+    artifacts: any
 
 # Detached cosign signatures for everything users download: the archives and
 # the checksums file. Raw binaries are not published, so they are not signed.

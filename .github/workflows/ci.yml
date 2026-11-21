@@ -44,7 +44,7 @@ jobs:
         run: python3 -B -m unittest discover -s scripts -p 'test_*.py' -v
 
       - name: Test
-        run: go test -tags=containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay,http2legacy -race -v ./...
+        run: go test -tags=containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay -race -v ./...
 
   build:
     name: "[build] go build"
