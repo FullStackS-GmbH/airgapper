@@ -7,7 +7,6 @@ run:
     - exclude_graphdriver_btrfs
     - exclude_graphdriver_devicemapper
     - exclude_graphdriver_overlay
-    - http2legacy
 
 linters:
   enable:

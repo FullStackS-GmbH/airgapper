@@ -28,7 +28,7 @@ ARG TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
-    -tags=containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay,http2legacy \
+    -tags=containers_image_openpgp,exclude_graphdriver_btrfs,exclude_graphdriver_devicemapper,exclude_graphdriver_overlay \
     -trimpath \
     -ldflags="-s -w -X main.version=${APP_VERSION} -X main.commit=${APP_COMMIT_SHA}" \
     -o /usr/local/bin/airgapper \

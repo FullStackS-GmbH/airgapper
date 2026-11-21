@@ -90,21 +90,11 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install Syft
-        id: syft
-        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-        with:
-          syft-version: v1.42.1
+      - name: Install xgrep
+        run: npm install -g @mondoohq/xgrep@0.123.0
 
-      - name: Add Syft to PATH
-        run: echo "$(dirname "$SYFT_CMD")" >> "$GITHUB_PATH"
-        env:
-          SYFT_CMD: "${{ steps.syft.outputs.cmd }}"
-
-      - name: Verify Syft
-        run: "${SYFT_CMD} version"
-        env:
-          SYFT_CMD: "${{ steps.syft.outputs.cmd }}"
+      - name: Verify xgrep
+        run: xgrep version
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
